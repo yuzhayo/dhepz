@@ -4,10 +4,10 @@
     Builds and runs the unit tests.
 
 .DESCRIPTION
-    The test runner itself does not exist until issue #5. Until then this
-    script builds and then reports the runner as missing, rather than exiting 0
-    and reporting a pass that never happened — a green result from a test suite
-    that did not run is worse than a red one.
+    Builds each requested configuration and runs the test runner against it.
+
+    If the runner is missing the script exits 2 rather than 0: a green result
+    from a test suite that did not run is worse than a red one.
 
 .EXAMPLE
     ./tools/Test.ps1
@@ -35,7 +35,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$configurations = if ($Configuration -eq 'All') { @('Debug', 'Release') } else { @($Configuration) }
+# The @() is load-bearing: PowerShell unwraps a single-element array returned
+# from an if-expression into a scalar, and Set-StrictMode then makes .Count on
+# that string a hard error.
+$configurations = @(if ($Configuration -eq 'All') { 'Debug', 'Release' } else { $Configuration })
 
 foreach ($current in $configurations) {
     if (-not $NoBuild) {
@@ -48,7 +51,7 @@ foreach ($current in $configurations) {
     $runner = Join-Path $repositoryRoot "build\x64\$current\dhepz_tests.exe"
     if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
         Write-Host "No test runner at '$runner'." -ForegroundColor Yellow
-        Write-Host 'The runner is built by issue #5. Reporting this rather than exiting 0, because a pass from a suite that did not run is worse than a failure.' -ForegroundColor Yellow
+        Write-Host 'The build should have produced it. Reporting this rather than exiting 0, because a pass from a suite that did not run is worse than a failure.' -ForegroundColor Yellow
         exit 2
     }
 
@@ -66,7 +69,10 @@ foreach ($current in $configurations) {
         } else {
             $JUnitPath
         }
-        New-Item -ItemType Directory -Path (Split-Path -Parent $junit) -Force | Out-Null
+        $junitDirectory = Split-Path -Parent $junit
+        if ($junitDirectory) {
+            New-Item -ItemType Directory -Path $junitDirectory -Force | Out-Null
+        }
         $arguments += @('--junit', $junit)
     }
 
