@@ -77,6 +77,17 @@ class Value {
   void Set(std::wstring_view key, Value value);
   void Remove(std::wstring_view key);
 
+  // Source position, 1-based, recorded by the parser; 0/0 for values built
+  // in code. A member value carries its KEY's position, so a semantic
+  // diagnostic ("unknown property", "wrong kind") points at the name the
+  // user actually wrote.
+  int line() const { return line_; }
+  int column() const { return column_; }
+  void SetSourcePosition(int line, int column) {
+    line_ = line;
+    column_ = column;
+  }
+
   const std::vector<std::pair<std::wstring, Value>>& members() const { return members_; }
   const std::vector<Value>& items() const { return items_; }
 
@@ -84,6 +95,8 @@ class Value {
   Type type_ = Type::Null;
   bool bool_ = false;
   double number_ = 0.0;
+  int line_ = 0;
+  int column_ = 0;
   std::wstring text_;  // string payload, or verbatim number text
   std::vector<Value> items_;
   std::vector<std::pair<std::wstring, Value>> members_;

@@ -93,18 +93,26 @@ class Parser {
   std::wstring error_;
 
   std::wstring Message(std::wstring_view what) const {
-    std::size_t line = 1;
-    std::size_t column = 1;
-    for (std::size_t i = 0; i < pos_ && i < text_.size(); ++i) {
-      if (text_[i] == L'\n') {
-        ++line;
-        column = 1;
-      } else {
-        ++column;
-      }
-    }
+    int line = 0;
+    int column = 0;
+    PositionAt(pos_, &line, &column);
     return std::wstring(what) + L" (line " + std::to_wstring(line) + L", column " +
            std::to_wstring(column) + L")";
+  }
+
+  void PositionAt(std::size_t at, int* line, int* column) const {
+    std::size_t current_line = 1;
+    std::size_t current_column = 1;
+    for (std::size_t i = 0; i < at && i < text_.size(); ++i) {
+      if (text_[i] == L'\n') {
+        ++current_line;
+        current_column = 1;
+      } else {
+        ++current_column;
+      }
+    }
+    *line = static_cast<int>(current_line);
+    *column = static_cast<int>(current_column);
   }
 
   bool Fail(std::wstring_view what) {
@@ -137,40 +145,56 @@ class Parser {
     if (pos_ >= text_.size()) {
       return Fail(L"Unexpected end of input");
     }
+    const std::size_t start = pos_;
+    bool parsed = false;
     switch (text_[pos_]) {
       case L'{':
-        return ParseObject(out);
+        parsed = ParseObject(out);
+        break;
       case L'[':
-        return ParseArray(out);
+        parsed = ParseArray(out);
+        break;
       case L'"': {
         std::wstring text;
         if (!ParseString(&text)) {
           return false;
         }
         *out = Value::String(std::move(text));
-        return true;
+        parsed = true;
+        break;
       }
       case L't':
         if (!Literal(L"true")) {
           return Fail(L"Invalid literal, expected 'true'");
         }
         *out = Value::Bool(true);
-        return true;
+        parsed = true;
+        break;
       case L'f':
         if (!Literal(L"false")) {
           return Fail(L"Invalid literal, expected 'false'");
         }
         *out = Value::Bool(false);
-        return true;
+        parsed = true;
+        break;
       case L'n':
         if (!Literal(L"null")) {
           return Fail(L"Invalid literal, expected 'null'");
         }
         *out = Value::Null();
-        return true;
+        parsed = true;
+        break;
       default:
-        return ParseNumber(out);
+        parsed = ParseNumber(out);
+        break;
     }
+    if (parsed) {
+      int line = 0;
+      int column = 0;
+      PositionAt(start, &line, &column);
+      out->SetSourcePosition(line, column);
+    }
+    return parsed;
   }
 
   bool ParseObject(Value* out) {
@@ -193,6 +217,7 @@ class Parser {
         return Fail(L"Expected a quoted member name");
       }
       std::wstring key;
+      const std::size_t key_start = pos_;
       if (!ParseString(&key)) {
         return false;
       }
@@ -206,6 +231,12 @@ class Parser {
       if (!ParseValue(&member)) {
         return false;
       }
+      // Diagnostics about this member should point at the name, not at the
+      // value: stamp the key's position over the value's own.
+      int key_line = 0;
+      int key_column = 0;
+      PositionAt(key_start, &key_line, &key_column);
+      member.SetSourcePosition(key_line, key_column);
       object.Set(key, std::move(member));
       SkipWhitespace();
       if (pos_ < text_.size() && text_[pos_] == L',') {
