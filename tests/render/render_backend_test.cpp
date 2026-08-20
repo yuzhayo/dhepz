@@ -37,7 +37,7 @@ class StubBackend final : public render::RenderBackend {
   void EndFrame() override { calls.push_back("end"); }
   void Present(void*) override { calls.push_back("present"); }
 
-  render::ImageHandle LoadImage(std::wstring_view) override {
+  render::ImageHandle LoadImageFile(std::wstring_view) override {
     ++live_images;
     calls.push_back("load_image");
     return static_cast<render::ImageHandle>(next_image++);
@@ -65,7 +65,7 @@ class StubBackend final : public render::RenderBackend {
                          float) override {
     calls.push_back("stroke_rounded");
   }
-  void DrawText(std::wstring_view, const render::Rect&, const render::TextStyle&, render::Color,
+  void DrawTextRun(std::wstring_view, const render::Rect&, const render::TextStyle&, render::Color,
                 render::TextAlign, render::VerticalAlign) override {
     calls.push_back("draw_text");
   }
@@ -109,7 +109,7 @@ DHEPZ_TEST(RenderBackend, StubImplementsTheWholeSurfaceWithoutWin32) {
   const render::Size measured = surface.MeasureText(L"hello", style, 0.0f);
   DHEPZ_CHECK_EQ(measured.width, 5.0f * 7.0f);
 
-  const render::ImageHandle image = surface.LoadImage(L"icon.png");
+  const render::ImageHandle image = surface.LoadImageFile(L"icon.png");
   DHEPZ_CHECK(image != render::ImageHandle::Invalid);
 
   int window = 0;  // opaque to the interface
@@ -122,7 +122,7 @@ DHEPZ_TEST(RenderBackend, StubImplementsTheWholeSurfaceWithoutWin32) {
                             {0, 0, 0, 255}, 1.0f);
   surface.PushClip({10.0f, 10.0f, 80.0f, 80.0f});
   surface.PushTranslation({5.0f, 5.0f});
-  surface.DrawText(L"tab", {0.0f, 0.0f, 80.0f, 20.0f}, style, {255, 255, 255, 255},
+  surface.DrawTextRun(L"tab", {0.0f, 0.0f, 80.0f, 20.0f}, style, {255, 255, 255, 255},
                    render::TextAlign::Center, render::VerticalAlign::Middle);
   surface.DrawImage(image, {0.0f, 0.0f, 16.0f, 16.0f}, 1.0f);
   surface.PopTranslation();
