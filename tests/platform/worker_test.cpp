@@ -242,10 +242,21 @@ DHEPZ_TEST(Worker, SequentialJobsLeaveTheHandleCountFlat) {
   Rig rig;
   worker::Worker worker(rig.hwnd, rig.state.completion_message);
   const HANDLE process = GetCurrentProcess();
+
+  // Warm-up first: thread creation at the start of the test is stabilisation,
+  // not leakage, and machine noise there flaked the measurement.
+  for (int i = 0; i < 100; ++i) {
+    worker.Submit(
+        [](const std::atomic<bool>&) { return MakeInt(1); },
+        [&](std::shared_ptr<void> cargo) { rig.state.delivered.push_back(std::move(cargo)); });
+    PumpUntil([&] { return rig.state.delivered.size() == static_cast<std::size_t>(i + 1); }, 5000);
+  }
+  worker.JoinFinished();
+
   DWORD handles_before = 0;
   GetProcessHandleCount(process, &handles_before);
 
-  for (int i = 0; i < 1000; ++i) {
+  for (int i = 100; i < 1000; ++i) {
     worker.Submit(
         [](const std::atomic<bool>&) { return MakeInt(1); },
         [&](std::shared_ptr<void> cargo) { rig.state.delivered.push_back(std::move(cargo)); });

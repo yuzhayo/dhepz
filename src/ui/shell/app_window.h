@@ -97,6 +97,15 @@ class AppWindow final {
   // dead UI. Registering a handler adds the button.
   void set_settings_handler(std::function<void()> handler);
 
+  // Content integration (#71): the shell paints its frame and delegates the
+  // content area to a presenter. The painter runs inside the frame scope,
+  // after the chrome. Key/click handlers get first chance for clicks inside
+  // the content area and for WM_KEYDOWN; returning true means "handled,
+  // repaint". Unset hooks cost nothing.
+  void set_content_painter(std::function<void(render::GdiBackend&, const render::Rect&)> painter);
+  void set_content_key_handler(std::function<bool(int virtual_key)> handler);
+  void set_content_click_handler(std::function<bool(float x_logical, float y_logical)> handler);
+
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
                                         unsigned long long wparam, long long lparam);
@@ -124,6 +133,9 @@ class AppWindow final {
   std::function<void(std::uint32_t)> signal_handler_;
   std::function<void()> settle_handler_;
   std::function<void()> settings_handler_;
+  std::function<void(render::GdiBackend&, const render::Rect&)> content_painter_;
+  std::function<bool(int)> content_key_handler_;
+  std::function<bool(float, float)> content_click_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;

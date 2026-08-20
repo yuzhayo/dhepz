@@ -132,6 +132,19 @@ void AppWindow::set_settings_handler(std::function<void()> handler) {
   }
 }
 
+void AppWindow::set_content_painter(
+    std::function<void(render::GdiBackend&, const render::Rect&)> painter) {
+  content_painter_ = std::move(painter);
+}
+
+void AppWindow::set_content_key_handler(std::function<bool(int)> handler) {
+  content_key_handler_ = std::move(handler);
+}
+
+void AppWindow::set_content_click_handler(std::function<bool(float, float)> handler) {
+  content_click_handler_ = std::move(handler);
+}
+
 int AppWindow::ButtonCount() const {
   // Left-to-right: pin, [settings], min, max/restore, close. The gear only
   // exists while something can open — no dead button.
@@ -366,6 +379,10 @@ void AppWindow::PaintContent() {
                            render::VerticalAlign::Middle);
     }
   }
+
+  if (content_painter_) {
+    content_painter_(backend_, content);
+  }
 }
 
 void AppWindow::SetMaximized(bool maximize) {
@@ -491,7 +508,22 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       return 0;
     case WM_LBUTTONUP: {
       const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
-      if (button < 0) return 0;
+      if (button < 0) {
+        if (content_click_handler_) {
+          const int x_px = GET_X_LPARAM(lparam);
+          const int y_px = GET_Y_LPARAM(lparam);
+          const int margin = maximized_ ? 0 : Px(kShadowMargin);
+          RECT client{};
+          GetClientRect(window, &client);
+          if (x_px >= margin && y_px >= margin && x_px < client.right - margin &&
+              y_px < client.bottom - margin) {
+            if (content_click_handler_(Logical(x_px - margin), Logical(y_px - margin))) {
+              RenderFullFrame();
+            }
+          }
+        }
+        return 0;
+      }
       const int role = (ButtonCount() - 1) - button;  // 0 close … leftmost pin
       const bool is_pin = role == 4 || (role == 3 && !settings_handler_);
       if (role == 0) {
@@ -506,6 +538,14 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
         settings_handler_();
       }
       return 0;
+    }
+    case WM_KEYDOWN: {
+      if (content_key_handler_ && content_key_handler_(static_cast<int>(wparam))) {
+        RenderFullFrame();
+        return 0;
+      }
+      return DefWindowProcW(window, message, static_cast<WPARAM>(wparam),
+                            static_cast<LPARAM>(lparam));
     }
     case WM_GETMINMAXINFO: {
       const LRESULT result =
