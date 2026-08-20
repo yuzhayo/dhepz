@@ -103,6 +103,10 @@ class AppWindow final {
   // the content area and for WM_KEYDOWN; returning true means "handled,
   // repaint". Unset hooks cost nothing.
   void set_content_painter(std::function<void(render::GdiBackend&, const render::Rect&)> painter);
+  // Runs before BeginFrame with the content rect: measurement (layout) must
+  // happen outside the paint scope — the backend refuses font creation
+  // inside a frame. Unset costs nothing.
+  void set_content_layout(std::function<void(const render::Rect&)> layout);
   void set_content_key_handler(std::function<bool(int virtual_key)> handler);
   void set_content_click_handler(std::function<bool(float x_logical, float y_logical)> handler);
 
@@ -134,6 +138,7 @@ class AppWindow final {
   std::function<void()> settle_handler_;
   std::function<void()> settings_handler_;
   std::function<void(render::GdiBackend&, const render::Rect&)> content_painter_;
+  std::function<void(const render::Rect&)> content_layout_;
   std::function<bool(int)> content_key_handler_;
   std::function<bool(float, float)> content_click_handler_;
   std::uint32_t last_os_signals_ = 0;

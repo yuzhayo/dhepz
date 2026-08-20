@@ -32,4 +32,8 @@ void PaintBackdrop(render::RenderBackend* backend, LayoutEngine* engine,
                    const config::ResolvedUiDocument& document, std::wstring_view route,
                    render::Size size, std::wstring_view theme, const ListModel* model);
 
+// Draw-only variant for a screen backdrop: paints `tree` (laid out by the
+// caller outside the frame scope). No measurement happens here.
+void PaintBackdropTree(render::RenderBackend* backend, const LayoutNode& tree);
+
 }  // namespace ui::layout

@@ -137,6 +137,10 @@ void AppWindow::set_content_painter(
   content_painter_ = std::move(painter);
 }
 
+void AppWindow::set_content_layout(std::function<void(const render::Rect&)> layout) {
+  content_layout_ = std::move(layout);
+}
+
 void AppWindow::set_content_key_handler(std::function<bool(int)> handler) {
   content_key_handler_ = std::move(handler);
 }
@@ -302,6 +306,12 @@ void AppWindow::RenderFullFrame() {
   if (!backend_.TakeInvalidation(dirty)) {
     backend_.InvalidateAll();
     backend_.TakeInvalidation(dirty);
+  }
+  if (content_layout_) {
+    const float width = backend_.surface_size().width;
+    const float height = backend_.surface_size().height;
+    const float margin = maximized_ ? 0.0f : kShadowMargin;
+    content_layout_({margin, margin, width - margin * 2, height - margin * 2});
   }
   backend_.BeginFrame(dirty);
   PaintContent();

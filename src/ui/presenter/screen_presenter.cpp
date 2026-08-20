@@ -33,15 +33,50 @@ render::Color ScreenPresenter::Token(std::wstring_view name, render::Color fallb
   return fallback;
 }
 
-void ScreenPresenter::Paint(const render::Rect& content) {
+void ScreenPresenter::Prepare(const render::Rect& content) {
   if (document_ == nullptr || route_.empty()) return;
   const render::Size size{content.width, content.height};
+  const config::Route* route = document_->FindRoute(route_);
+  backdrop_tree_ = nullptr;
+  if (route != nullptr &&
+      route->backdrop_kind == config::Route::BackdropKind::Screen) {
+    backdrop_tree_ =
+        &engine_.LayoutRoute(*document_, route->backdrop_value, size, nullptr);
+  }
+  last_tree_ = &engine_.LayoutRoute(*document_, route_, size, nullptr);
+  plan_ = layout::MakePaintPlan(*document_, route_);
+}
+
+void ScreenPresenter::Paint(const render::Rect& content) {
+  if (document_ == nullptr || last_tree_ == nullptr) return;
 
   backend_->PushTranslation({content.x, content.y});
-  layout::PaintBackdrop(backend_, &engine_, *document_, route_, size, theme_, nullptr);
-  const layout::LayoutNode& tree = engine_.LayoutRoute(*document_, route_, size, nullptr);
-  last_tree_ = &tree;
-  PaintNode(tree);
+  switch (plan_.kind) {
+    case config::Route::BackdropKind::Color: {
+      config::Rgba rgba{};
+      if (document_->Token(theme_, plan_.value, &rgba)) {
+        backend_->FillRect({0.0f, 0.0f, content.width, content.height},
+                           render::Color{rgba.r, rgba.g, rgba.b, rgba.a});
+      }
+      break;
+    }
+    case config::Route::BackdropKind::Image: {
+      const render::ImageHandle image = backend_->LoadImageFile(plan_.value);
+      if (image != render::ImageHandle::Invalid) {
+        backend_->DrawImage(image, {0.0f, 0.0f, content.width, content.height}, 1.0f);
+        backend_->ReleaseImage(image);
+      }
+      break;
+    }
+    case config::Route::BackdropKind::Screen:
+      if (backdrop_tree_ != nullptr) {
+        layout::PaintBackdropTree(backend_, *backdrop_tree_);
+      }
+      break;
+    case config::Route::BackdropKind::None:
+      break;
+  }
+  PaintNode(*last_tree_);
   backend_->PopTranslation();
 }
 
