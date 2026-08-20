@@ -110,7 +110,8 @@ DHEPZ_TEST(GatePhase2, InputToPaintWithinBudget) {
   // The 16 ms budget is a real-hardware number (plan: performance comes
   // from the installed Release build). Headless CI renders in software and
   // is not the measurement target — there it only guards against pathology.
-  const bool on_ci = GetEnvironmentVariableW(L"CI", nullptr, 0) != 0;
+  wchar_t ci_buffer[8]{};
+  const bool on_ci = GetEnvironmentVariableW(L"CI", ci_buffer, 8) != 0;
 #ifdef NDEBUG
   DHEPZ_CHECK(ms < (on_ci ? 500.0 : 16.0));
 #else
