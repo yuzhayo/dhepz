@@ -62,8 +62,15 @@ jobs:
         shell: pwsh
         run: ./tools/Test.ps1 -JUnitPath artifacts/test-results/results.xml
 
-      # if: always() so a failing suite still uploads its report — the report is
-      # most useful in exactly the case where the previous step failed.
+      # if: always() so a failing suite still reports — the report is most
+      # useful in exactly the case where the previous step failed.
+      #
+      # use-actions-summary: false is load-bearing. Left at its default the
+      # action writes a job summary and creates no check run, which means no
+      # inline annotation on the failing line. RepoRelative() in test_main.cpp
+      # exists solely to make those annotations land, so the default would waste
+      # it. fail-on-error: false because the build step already failed the job;
+      # a second failure here only obscures the real one.
       - name: Publish test results
         uses: dorny/test-reporter@v1
         if: always()
@@ -72,6 +79,7 @@ jobs:
           path: artifacts/test-results/*.xml
           reporter: java-junit
           fail-on-error: false
+          use-actions-summary: false
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
