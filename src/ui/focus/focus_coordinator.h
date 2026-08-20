@@ -23,6 +23,9 @@ class FocusCoordinator final {
   // Focusable ids in traversal order; empty route -> empty vector.
   std::vector<std::wstring> Focusables(std::wstring_view route) const;
 
+  // The node a focusable id refers to; nullptr for unknown ids.
+  const config::ComponentNode* NodeFor(std::wstring_view route, std::wstring_view id) const;
+
   // Current owner; empty when the route has nothing focusable or has not
   // been entered.
   std::wstring Current(std::wstring_view route) const;
@@ -40,7 +43,7 @@ class FocusCoordinator final {
 
  private:
   struct RouteState {
-    std::vector<std::wstring> order;
+    std::vector<std::pair<std::wstring, const config::ComponentNode*>> order;
     std::wstring current;
   };
   RouteState* Find(std::wstring_view route);
