@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "platform/settle_timer.h"
 #include "platform/signal_fanout.h"
 #include "render/gdi_resource_cache.h"
 
@@ -18,6 +19,8 @@ constexpr float kCornerRadius = 10.0f;
 constexpr float kCaptionHeight = 40.0f;
 constexpr float kButtonWidth = 46.0f;
 constexpr float kResizeBorder = 6.0f;
+constexpr std::uintptr_t kSettleTimerId = 0xD3E9C1A7;
+constexpr unsigned int kSettleDelayMs = 100;
 
 // Dark palette until themes land in Phase 2.
 constexpr render::Color kBackground{30, 30, 30, 255};
@@ -81,11 +84,20 @@ bool AppWindow::Create(void* instance, float content_width, float content_height
           signal_handler_(mask);
         }
       });
+  settle_timer_ = std::make_unique<platform::SettleTimer>(hwnd_, kSettleTimerId, [this] {
+    if (settle_handler_) {
+      settle_handler_();
+    }
+  });
   return true;
 }
 
 void AppWindow::set_signal_handler(std::function<void(std::uint32_t)> handler) {
   signal_handler_ = std::move(handler);
+}
+
+void AppWindow::set_settle_handler(std::function<void()> handler) {
+  settle_handler_ = std::move(handler);
 }
 
 void AppWindow::Show() {
@@ -135,6 +147,9 @@ void AppWindow::OnResized(int width_px, int height_px) {
   if (width_px <= 0 || height_px <= 0) return;
   backend_.Resize({Logical(width_px), Logical(height_px)});
   RenderFullFrame();
+  if (settle_timer_) {
+    settle_timer_->Arm(kSettleDelayMs);  // activity: the timer exists now
+  }
 }
 
 void AppWindow::OnDpiChanged(float dpi, int suggested_width_px, int suggested_height_px) {
@@ -144,7 +159,7 @@ void AppWindow::OnDpiChanged(float dpi, int suggested_width_px, int suggested_he
   backend_.SetDpi(dpi);
   SetWindowPos(static_cast<HWND>(hwnd_), nullptr, 0, 0, suggested_width_px, suggested_height_px,
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-  OnResized(suggested_width_px, suggested_height_px);
+  OnResized(suggested_width_px, suggested_height_px);  // arms the settle timer
 }
 
 int AppWindow::ButtonAt(int x_px, int y_px) const {
@@ -319,6 +334,10 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
   HWND window = static_cast<HWND>(window_handle);
   if (message == drain_message_ && signals_) {
     signals_->DrainMessage();
+    return 0;
+  }
+  if (message == WM_TIMER && wparam == kSettleTimerId && settle_timer_) {
+    settle_timer_->OnTimer();
     return 0;
   }
   switch (message) {

@@ -33,6 +33,7 @@ class GdiResourceCache;
 
 namespace platform {
 class SignalFanout;
+class SettleTimer;
 }
 
 namespace shell {
@@ -81,6 +82,11 @@ class AppWindow final {
   void set_signal_handler(std::function<void(std::uint32_t)> handler);
   std::uint32_t last_os_signals() const { return last_os_signals_; }
 
+  // Fires once after a burst of activity (resize, DPI change) settles.
+  // The underlying timer exists only while activity is ongoing — never at
+  // idle. This is the hook settle-time measurement (ETW) attaches to.
+  void set_settle_handler(std::function<void()> handler);
+
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
                                         unsigned long long wparam, long long lparam);
@@ -102,7 +108,9 @@ class AppWindow final {
   void* hwnd_ = nullptr;  // HWND
   render::GdiBackend backend_;
   std::unique_ptr<platform::SignalFanout> signals_;
+  std::unique_ptr<platform::SettleTimer> settle_timer_;
   std::function<void(std::uint32_t)> signal_handler_;
+  std::function<void()> settle_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;
