@@ -48,5 +48,6 @@ Tasks live in **GitHub Issues**, not in a markdown checklist. One milestone per 
 - Issues #24–#29 — one outline per remaining phase, broken down at the preceding gate.
 - Issue #30 — dependency order and working index; read it before picking up work.
 - `CHECKPOINT` issues are phase gates. **No phase starts until the previous gate is fully ticked.**
+- `.github/planning/` holds the scripts that generated those issues, and the issue-body template to reuse when a later phase is broken down. See its README.
 
 When implementing, work from the issue: its acceptance criteria and verification steps are the definition of done for that task. If reality contradicts an acceptance criterion, say so and amend the issue rather than quietly doing something else.
