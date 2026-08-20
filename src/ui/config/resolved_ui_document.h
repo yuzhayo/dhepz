@@ -63,6 +63,12 @@ struct Route {
   std::wstring id;
   std::wstring tab_label;
   bool show_in_tabs = true;
+  // The z-layer behind this screen's content (#62). A color token name, an
+  // image path, or another route's id. When present, the screen's own fill
+  // is transparent and this layer paints first.
+  enum class BackdropKind { None, Color, Image, Screen };
+  BackdropKind backdrop_kind = BackdropKind::None;
+  std::wstring backdrop_value;
   ComponentNode root;
 };
 

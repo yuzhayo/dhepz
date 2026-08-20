@@ -256,8 +256,30 @@ core::Status ResolveDocument(const json::Value& core, const std::vector<ScreenSo
     route.id = route_order[i];
     route.tab_label = route_screen[i]->StringField(L"tab_label", route_order[i]);
     route.show_in_tabs = route_screen[i]->BoolField(L"show_in_tabs", true);
+    const json::Value* backdrop = route_screen[i]->Find(L"backdrop");
+    if (backdrop != nullptr && backdrop->is_string() && !backdrop->AsString().empty()) {
+      const std::wstring& value = backdrop->AsString();
+      if (value.rfind(L"screen:", 0) == 0) {
+        route.backdrop_kind = Route::BackdropKind::Screen;
+        route.backdrop_value = value.substr(7);
+      } else {
+        const json::Value* dark = tokens != nullptr ? tokens->Find(L"dark") : nullptr;
+        const bool is_token =
+            dark != nullptr && dark->is_object() && dark->Find(value) != nullptr;
+        route.backdrop_kind = is_token ? Route::BackdropKind::Color : Route::BackdropKind::Image;
+        route.backdrop_value = value;
+      }
+    }
     route.root = BuildNode(core, *route_screen[i]);
     document->routes_.push_back(std::move(route));
+  }
+
+  for (const Route& route : document->routes_) {
+    if (route.backdrop_kind == Route::BackdropKind::Screen &&
+        document->FindRoute(route.backdrop_value) == nullptr) {
+      return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                       L"backdrop screen '" + route.backdrop_value + L"' does not exist");
+    }
   }
 
   if (initial_route.empty() && !document->routes_.empty()) {
