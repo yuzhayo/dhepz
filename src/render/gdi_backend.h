@@ -35,11 +35,21 @@
 
 #include "render/render_backend.h"
 
+namespace trace {
+struct ResourceSnapshot;
+}
+
 namespace render {
+
+struct CacheSizes;
+class GdiResourceCache;
 
 class GdiBackend final : public RenderBackend {
  public:
-  GdiBackend();
+  // With a shared cache, fonts and decoded images persist across window
+  // close (the plan's explicit choice — G2 wins that tie). With none, the
+  // backend owns a private cache and behaves like a self-contained window.
+  explicit GdiBackend(GdiResourceCache* shared_cache = nullptr);
   ~GdiBackend() override;
 
   GdiBackend(const GdiBackend&) = delete;
@@ -95,6 +105,12 @@ class GdiBackend final : public RenderBackend {
   int buffer_width() const;   // physical pixels
   int buffer_height() const;  // physical pixels
   std::uint32_t PixelAt(int x, int y) const;  // 0xAABBGGRR, or 0 out of range
+
+  // Cache reporting, for ResourceSnapshot (drift visible in measurement,
+  // not discovered at hour six). CacheSizes is complete in
+  // gdi_resource_cache.h.
+  CacheSizes cache_sizes() const;
+  void FillSnapshot(trace::ResourceSnapshot& snapshot) const;
 
  private:
   struct Impl;
