@@ -1,19 +1,36 @@
 #include <windows.h>
 
-#include "app_version.h"
+#include <cstdint>
 
-// Phase 0 skeleton. This exists so the flag set in dhepz.vcxproj can be
-// verified by a real build and link (issue #1). The tray-resident process
-// lands in issue #11.
+#include "app_version.h"
+#include "platform/performance_trace.h"
+#include "platform/tray_process.h"
+
+// Phase 0's tray-resident process: one hidden infrastructure window and one
+// tray icon, no UI, no config, no modules. This is the thing whose idle
+// cost gets measured (#13), so it stays genuinely minimal: exactly one
+// thread, a message loop that blocks in GetMessageW, and nothing that wakes
+// when nothing changed.
 //
 // wWinMain rather than main: SubSystem is Windows, so there is no console
 // window to flash on launch. That matters for the ~400 ms cold-start budget
 // and for the silent --tray path.
+namespace {
+
+// Distinct numeric exit codes for every bootstrap failure, each with a
+// MessageBox — no silent exits. The codes start at 10 so they cannot be
+// confused with a normal 0/1 result.
+[[noreturn]] void BootstrapFailed(unsigned int code, const wchar_t* what) {
+  MessageBoxW(nullptr, what, L"dhepz", MB_OK | MB_ICONERROR);
+  ExitProcess(code);
+}
+
+}  // namespace
+
 int APIENTRY wWinMain(_In_ HINSTANCE instance,
                       _In_opt_ HINSTANCE previous,
                       _In_ LPWSTR command_line,
                       _In_ int show_command) {
-  UNREFERENCED_PARAMETER(instance);
   UNREFERENCED_PARAMETER(previous);
   UNREFERENCED_PARAMETER(command_line);
   UNREFERENCED_PARAMETER(show_command);
@@ -21,5 +38,31 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   static_assert(dhepz::version::kMajor >= 0,
                 "version.props must reach the compiler as defines");
 
-  return 0;
+  // The QPC captured on the first line IS the ProcessEntry milestone: the
+  // session emits it as soon as the provider registers. The tray-only path
+  // has no window by design, so the window milestones (ConfigResolved …
+  // FirstFrameVisible) never fire here; they join with the code that shows
+  // a window.
+  const std::int64_t process_entry_qpc = trace::CurrentQpc();
+  trace::PerformanceTraceSession session(process_entry_qpc);
+
+  tray::TrayProcess tray_process;
+  switch (tray_process.Start(instance)) {
+    case tray::StartResult::Ok:
+      break;
+    case tray::StartResult::WindowClassFailed:
+      BootstrapFailed(10, L"The infrastructure window class could not be registered.");
+    case tray::StartResult::WindowCreateFailed:
+      BootstrapFailed(11, L"The infrastructure window could not be created.");
+    case tray::StartResult::TaskbarMessageFailed:
+      BootstrapFailed(12, L"The TaskbarCreated message could not be registered.");
+  }
+
+  // Non-fatal by design: a headless session has no shell to host the icon,
+  // and the process must still run (CI, automated runs).
+  tray_process.InstallTray();
+
+  const int result = tray_process.Run();
+  tray_process.Shutdown();
+  return result;
 }
