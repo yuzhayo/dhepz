@@ -37,7 +37,9 @@ class RecordingBackend final : public render::RenderBackend {
     fills.push_back({rect, color});
   }
   void StrokeRoundedRect(const render::Rect&, const render::CornerRadius&, render::Color,
-                         float) override {}
+                         float stroke_width) override {
+    if (stroke_width >= 2.0f) calls.push_back(L"ring");
+  }
   void DrawTextRun(std::wstring_view text, const render::Rect&, const render::TextStyle&,
                    render::Color, render::TextAlign, render::VerticalAlign) override {
     calls.push_back(L"text:" + std::wstring(text));

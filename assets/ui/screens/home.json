@@ -12,7 +12,7 @@
           "gap": 12,
           "padding": { "left": 24, "top": 24, "right": 24, "bottom": 24 },
           "children": [
-            { "type": "text", "text": "dhepz", "variant": "title" },
+            { "type": "text", "text": "Welcome", "variant": "title" },
             { "type": "button", "label": "Open terminal" }
           ]
         }
