@@ -132,6 +132,9 @@
         },
         "select_rules": {
           "kind": "array"
+        },
+        "backdrop": {
+          "kind": "string"
         }
       }
     },
