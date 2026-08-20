@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "platform/signal_fanout.h"
 #include "render/gdi_resource_cache.h"
 
 namespace shell {
@@ -71,7 +72,20 @@ bool AppWindow::Create(void* instance, float content_width, float content_height
   }
   restored_width_px_ = width;
   restored_height_px_ = height;
+
+  drain_message_ = RegisterWindowMessageW(L"dhepz.signal.drain");
+  signals_ = std::make_unique<platform::SignalFanout>(
+      hwnd_, drain_message_, [this](std::uint32_t mask) {
+        last_os_signals_ |= mask;
+        if (signal_handler_) {
+          signal_handler_(mask);
+        }
+      });
   return true;
+}
+
+void AppWindow::set_signal_handler(std::function<void(std::uint32_t)> handler) {
+  signal_handler_ = std::move(handler);
 }
 
 void AppWindow::Show() {
@@ -303,7 +317,24 @@ long long __stdcall AppWindow::WindowProc(void* window, unsigned int message,
 long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
                                    unsigned long long wparam, long long lparam) {
   HWND window = static_cast<HWND>(window_handle);
+  if (message == drain_message_ && signals_) {
+    signals_->DrainMessage();
+    return 0;
+  }
   switch (message) {
+    case WM_THEMECHANGED:
+    case WM_DWMCOLORIZATIONCOLORCHANGED:
+      if (signals_) signals_->Raise(platform::OsSignal::Theme);
+      return 0;
+    case WM_SYSCOLORCHANGE:
+      if (signals_) signals_->Raise(platform::OsSignal::SystemColors);
+      return 0;
+    case WM_SETTINGCHANGE:
+      if (signals_) signals_->Raise(platform::OsSignal::Settings);
+      return 0;
+    case WM_DISPLAYCHANGE:
+      if (signals_) signals_->Raise(platform::OsSignal::Display);
+      return 0;
     case WM_NCHITTEST: {
       POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       ScreenToClient(window, &point);
