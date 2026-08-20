@@ -118,7 +118,14 @@ DHEPZ_TEST(Worker, ThreadCountReturnsToZeroAtIdle) {
 
   DHEPZ_CHECK(worker.ThreadCount() >= 1);
   PumpUntil([&] { return rig.state.delivered.size() == 1; }, 5000);
-  worker.JoinFinished();
+  // The worker marks its thread done just after posting the completion, so
+  // the registry catches up a hair after delivery; join in a short retry
+  // loop instead of racing it.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+  while (worker.ThreadCount() > 0 && std::chrono::steady_clock::now() < deadline) {
+    worker.JoinFinished();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
   DHEPZ_CHECK_EQ(worker.ThreadCount(), static_cast<std::size_t>(0));
   worker.Shutdown();
 }
