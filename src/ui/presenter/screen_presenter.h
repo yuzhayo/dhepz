@@ -43,13 +43,23 @@ class ScreenPresenter final {
   // Click-to-focus on a focusable node; true when focus moved.
   bool HandleClick(float x, float y);
 
+  // The shell reserves its caption row for dragging and the main icons;
+  // the tab strip sits below it. Default 0 keeps the strip at the top.
+  void set_caption_height(float height) { caption_height_ = height; }
+
+  // True when the point (content-relative) is over interactive content —
+  // the shell uses it to keep such points out of the caption drag zone.
+  bool HitTestContent(float x, float y) const;
+
   std::wstring focused() const { return focus_.Current(route_); }
 
  private:
   void PaintNode(const layout::LayoutNode& node);
+  void PaintTabs();
   bool ClickNode(const layout::LayoutNode& node, float x, float y);
   const config::ComponentNode* FindButton(const layout::LayoutNode& node, float x,
                                           float y) const;
+  int TabAt(float x, float y) const;
   render::Color Token(std::wstring_view name, render::Color fallback) const;
   // The style a text node is measured AND painted with; keeping the two
   // identical is what warms the painted font during layout.
@@ -64,6 +74,13 @@ class ScreenPresenter final {
   const config::ComponentNode* focused_node_ = nullptr;
   const config::ComponentNode* hover_node_ = nullptr;
   const config::ComponentNode* pressed_node_ = nullptr;
+  std::vector<render::Rect> tab_rects_;
+  std::vector<std::wstring> tab_routes_;
+  std::vector<std::wstring> tab_labels_;
+  int hover_tab_ = -1;
+  int pressed_tab_ = -1;
+  float caption_height_ = 0.0f;
+  float tab_strip_height_ = 0.0f;
   layout::PaintPlan plan_;
   std::wstring route_;
   std::wstring theme_;

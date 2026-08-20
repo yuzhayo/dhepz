@@ -1,0 +1,13 @@
+{
+  "components": [
+    {
+      "type": "screen",
+      "route_id": "demo-2",
+      "tab_label": "Demo 2",
+      "backdrop": "danger",
+      "children": [
+        { "type": "text", "text": "Demo two", "variant": "title" }
+      ]
+    }
+  ]
+}
