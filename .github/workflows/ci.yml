@@ -10,9 +10,6 @@ on:
 
 permissions:
   contents: read
-  # test-reporter creates a check run to surface failures as inline
-  # annotations. Without checks:write it silently degrades to a plain upload.
-  checks: write
 
 concurrency:
   # A superseded run on the same branch is wasted compute. main is excluded:
@@ -31,16 +28,17 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      # Needed only for the Velopack `vpk` packaging tool in Phase 6, but
-      # installed here so Test-Toolchain.ps1 can verify global.json resolves.
-      # An unresolvable pin is a build failure waiting for the first release.
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.304
+      - uses: microsoft/setup-msbuild@v3
 
-      - uses: microsoft/setup-msbuild@v2
+      # Deliberately no actions/setup-dotnet. Nothing in the build or test path
+      # invokes dotnet — the runner image already ships a 9.0.3xx SDK, and
+      # global.json's rollForward: latestPatch resolves to it. Installing a
+      # pinned SDK downloaded 298 MB and took 6 of the job's 6.5 minutes, then
+      # Test-Toolchain reported the preinstalled 9.0.316 anyway, so the download
+      # was entirely discarded. Velopack's vpk tool is the first real dotnet
+      # dependency; add setup-dotnet back in Phase 6 when packaging needs it.
 
       # Runs before the build so a toolchain mismatch is reported as itself
       # rather than as a confusing compile error 10 minutes later.
@@ -62,19 +60,48 @@ jobs:
         shell: pwsh
         run: ./tools/Test.ps1 -JUnitPath artifacts/test-results/results.xml
 
-      # if: always() so a failing suite still uploads its report — the report is
-      # most useful in exactly the case where the previous step failed.
-      - name: Publish test results
-        uses: dorny/test-reporter@v1
+      # Emits GitHub annotations from the JUnit report directly, rather than via
+      # a third-party reporter action. dorny/test-reporter's java-junit parser
+      # ignores the `file`/`line` attributes on <testcase> and annotates the XML
+      # file itself, which puts the marker on a build artifact instead of the
+      # failing source line. RepoRelative() in test_main.cpp exists specifically
+      # to make source annotations possible, so parsing the report here is what
+      # actually delivers them. It also drops a third-party action from the
+      # supply chain.
+      #
+      # if: always() because the report matters most when the previous step
+      # failed. This step never fails the job on its own — the test step already
+      # did, and a second failure would only obscure the real one.
+      - name: Annotate test failures
+        shell: pwsh
         if: always()
-        with:
-          name: tests
-          path: artifacts/test-results/*.xml
-          reporter: java-junit
-          fail-on-error: false
+        run: |
+          $reports = @(Get-ChildItem -Path artifacts/test-results -Filter *.xml -ErrorAction SilentlyContinue)
+          if ($reports.Count -eq 0) {
+            Write-Host '::warning::No JUnit report was produced.'
+            exit 0
+          }
+          foreach ($report in $reports) {
+            $config = if ($report.BaseName -match '\.(\w+)$') { $Matches[1] } else { $report.BaseName }
+            $xml = [xml](Get-Content -LiteralPath $report.FullName -Raw)
+            # The runner reports a crash as a <failure> too, and emits no
+            # `errors` attribute, so there is deliberately no <error> handling
+            # here. Reading $xml.testsuites.errors would yield empty string.
+            foreach ($case in $xml.SelectNodes('//testcase/failure')) {
+              # A newline truncates an annotation at its first line, so the
+              # expected/actual detail is encoded rather than lost.
+              $message = ($case.InnerText -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A')
+              $testcase = $case.ParentNode
+              $title = "$config - $($testcase.classname).$($testcase.name)"
+              Write-Host "::error file=$($testcase.file),line=$($testcase.line),title=$title::$message"
+            }
+            $suite = $xml.testsuites
+            $verdict = if ([int]$suite.failures -eq 0) { 'all passed' } else { "$($suite.failures) failed" }
+            "$config`: $($suite.tests) tests, $verdict" >> $env:GITHUB_STEP_SUMMARY
+          }
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
@@ -85,7 +112,7 @@ jobs:
       # Release build. This is not that: it is the build-tree binary, uploaded so
       # a reviewer can check size and hardening flags without a local toolchain.
       - name: Upload Release binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dhepz-release-x64
           path: build/x64/Release/dhepz.exe
