@@ -25,6 +25,16 @@ render::TextStyle ScreenPresenter::StyleForText(const config::ComponentNode& nod
   return style;
 }
 
+namespace {
+render::Color Shade(render::Color color, int delta) {
+  auto clamp = [](int value) {
+    return static_cast<unsigned char>(value < 0 ? 0 : (value > 255 ? 255 : value));
+  };
+  return render::Color{clamp(color.r + delta), clamp(color.g + delta),
+                       clamp(color.b + delta), color.a};
+}
+}  // namespace
+
 void ScreenPresenter::SetDocument(const config::ResolvedUiDocument* document) {
   document_ = document;
   focus_.SetDocument(document);
@@ -51,7 +61,24 @@ render::Color ScreenPresenter::Token(std::wstring_view name, render::Color fallb
 
 void ScreenPresenter::Prepare(const render::Rect& content) {
   if (document_ == nullptr || route_.empty()) return;
-  const render::Size size{content.width, content.height};
+
+  // Tab strip: one tab per route that shows in tabs, anchored left.
+  tab_rects_.clear();
+  tab_routes_.clear();
+  tab_labels_.clear();
+  float cursor_x = 12.0f;  // left padding: tabs never touch the border
+  for (const config::Route& route : document_->routes()) {
+    if (!route.show_in_tabs) continue;
+    const std::wstring label = route.tab_label.empty() ? route.id : route.tab_label;
+    const render::Size size = backend_->MeasureText(label, render::TextStyle{}, 0.0f);
+    tab_rects_.push_back({cursor_x, caption_height_, size.width + 20.0f, 28.0f});
+    tab_routes_.push_back(route.id);
+    tab_labels_.push_back(label);
+    cursor_x += size.width + 28.0f;
+  }
+  tab_strip_height_ = tab_rects_.empty() ? 0.0f : caption_height_ + 36.0f;
+
+  const render::Size size{content.width, content.height - tab_strip_height_};
   const config::Route* route = document_->FindRoute(route_);
   backdrop_tree_ = nullptr;
   if (route != nullptr &&
@@ -93,8 +120,56 @@ void ScreenPresenter::Paint(const render::Rect& content) {
     case config::Route::BackdropKind::None:
       break;
   }
+  PaintTabs();
+  backend_->PopTranslation();
+
+  backend_->PushTranslation({content.x, content.y + tab_strip_height_});
   PaintNode(*last_tree_);
   backend_->PopTranslation();
+}
+
+int ScreenPresenter::TabAt(float x, float y) const {
+  for (std::size_t i = 0; i < tab_rects_.size(); ++i) {
+    if (tab_rects_[i].contains({x, y})) return static_cast<int>(i);
+  }
+  return -1;
+}
+
+bool ScreenPresenter::HitTestContent(float x, float y) const {
+  if (y >= caption_height_ && y < tab_strip_height_) return TabAt(x, y) >= 0;
+  return last_tree_ != nullptr &&
+         FindButton(*last_tree_, x, y - tab_strip_height_) != nullptr;
+}
+
+void ScreenPresenter::PaintTabs() {
+  for (std::size_t i = 0; i < tab_rects_.size(); ++i) {
+    render::Rect box = tab_rects_[i];
+    const bool selected = tab_routes_[i] == route_;
+    render::Color outline = Token(L"borderStrong", {70, 76, 88, 255});
+    const bool hovered = static_cast<int>(i) == hover_tab_;
+    if (selected) {
+      outline = Token(L"accent", {96, 165, 250, 255});
+      render::Color tint = outline;
+      tint.a = 90;
+      backend_->FillRoundedRect(box, render::CornerRadius::Uniform(6.0f), tint);
+    } else if (hovered) {
+      outline = Token(L"accent", {96, 165, 250, 255});
+    }
+    if (static_cast<int>(i) == pressed_tab_) {
+      outline = Shade(outline, -20);
+      box.y += 1.0f;
+    }
+    backend_->StrokeRoundedRect(box, render::CornerRadius::Uniform(6.0f), outline, 1.0f);
+    if (hovered) {
+      const render::Rect inner{box.x + 1.0f, box.y + 1.0f, box.width - 2.0f,
+                               box.height - 2.0f};
+      backend_->StrokeRoundedRect(inner, render::CornerRadius::Uniform(5.0f), outline,
+                                  2.0f);
+    }
+    backend_->DrawTextRun(tab_labels_[i], box, render::TextStyle{},
+                          Token(L"text", {255, 255, 255, 255}), render::TextAlign::Center,
+                          render::VerticalAlign::Middle);
+  }
 }
 
 bool ScreenPresenter::ClickNode(const layout::LayoutNode& node, float x, float y) {
@@ -126,30 +201,57 @@ const config::ComponentNode* ScreenPresenter::FindButton(const layout::LayoutNod
 }
 
 bool ScreenPresenter::HandleMove(float x, float y) {
+  bool changed = false;
+  const bool in_strip = y >= caption_height_ && y < tab_strip_height_;
+  const int tab = in_strip ? TabAt(x, y) : -1;
+  if (tab != hover_tab_) {
+    hover_tab_ = tab;
+    changed = true;
+  }
   const config::ComponentNode* hit =
-      last_tree_ != nullptr ? FindButton(*last_tree_, x, y) : nullptr;
-  if (hit == hover_node_) return false;
-  hover_node_ = hit;
-  return true;
-}
-
-bool ScreenPresenter::HandleDown(float x, float y) {
-  const config::ComponentNode* hit =
-      last_tree_ != nullptr ? FindButton(*last_tree_, x, y) : nullptr;
-  const bool changed = hit != pressed_node_;
-  pressed_node_ = hit;
+      (!in_strip && last_tree_ != nullptr && y >= tab_strip_height_)
+          ? FindButton(*last_tree_, x, y - tab_strip_height_)
+          : nullptr;
+  if (hit != hover_node_) {
+    hover_node_ = hit;
+    changed = true;
+  }
   return changed;
 }
 
-namespace {
-render::Color Shade(render::Color color, int delta) {
-  auto clamp = [](int value) {
-    return static_cast<unsigned char>(value < 0 ? 0 : (value > 255 ? 255 : value));
-  };
-  return render::Color{clamp(color.r + delta), clamp(color.g + delta),
-                       clamp(color.b + delta), color.a};
+bool ScreenPresenter::HandleDown(float x, float y) {
+  bool changed = false;
+  const bool in_strip = y >= caption_height_ && y < tab_strip_height_;
+  const int tab = in_strip ? TabAt(x, y) : -1;
+  if (tab != pressed_tab_) {
+    pressed_tab_ = tab;
+    changed = true;
+  }
+  const config::ComponentNode* hit =
+      (!in_strip && last_tree_ != nullptr && y >= tab_strip_height_)
+          ? FindButton(*last_tree_, x, y - tab_strip_height_)
+          : nullptr;
+  if (hit != pressed_node_) {
+    pressed_node_ = hit;
+    changed = true;
+  }
+  return changed;
 }
-}  // namespace
+
+bool ScreenPresenter::HandleClick(float x, float y) {
+  if (y >= caption_height_ && y < tab_strip_height_) {
+    const int tab = TabAt(x, y);
+    pressed_tab_ = -1;
+    if (tab >= 0 && tab_routes_[tab] != route_) {
+      SwitchRoute(tab_routes_[tab]);
+      return true;
+    }
+    return tab >= 0;
+  }
+  if (last_tree_ == nullptr) return false;
+  pressed_node_ = nullptr;
+  return ClickNode(*last_tree_, x, y - tab_strip_height_);
+}
 
 void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
   const config::ComponentNode* source = node.source;
@@ -165,19 +267,27 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
       render::Rect box = node.bounds;
       const bool selected = source->GetBool(L"selected");
       render::Color outline = Token(L"borderStrong", {70, 76, 88, 255});
+      const bool hovered = source == hover_node_;
       if (selected) {
         outline = Token(L"accent", {96, 165, 250, 255});
         render::Color tint = outline;
-        tint.a = 40;
+        tint.a = 90;
         backend_->FillRoundedRect(box, render::CornerRadius::Uniform(6.0f), tint);
-      } else if (source == hover_node_) {
-        outline = Shade(outline, +40);
+      } else if (hovered) {
+        outline = Token(L"accent", {96, 165, 250, 255});
       }
       if (source == pressed_node_) {
         outline = Shade(outline, -20);
         box.y += 1.0f;  // the bump
       }
       backend_->StrokeRoundedRect(box, render::CornerRadius::Uniform(6.0f), outline, 1.0f);
+      if (hovered) {
+        // Flush against the outer outline: no gap between the two strokes.
+        const render::Rect inner{box.x + 1.0f, box.y + 1.0f, box.width - 2.0f,
+                                 box.height - 2.0f};
+        backend_->StrokeRoundedRect(inner, render::CornerRadius::Uniform(5.0f), outline,
+                                    2.0f);
+      }
       backend_->DrawTextRun(source->GetString(L"label"), box, render::TextStyle{},
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Center,
                             render::VerticalAlign::Middle);
@@ -198,12 +308,6 @@ bool ScreenPresenter::HandleKey(int virtual_key) {
   if (virtual_key != VK_TAB) return false;
   const bool backward = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
   return !focus_.Advance(route_, backward).empty();
-}
-
-bool ScreenPresenter::HandleClick(float x, float y) {
-  if (last_tree_ == nullptr) return false;
-  pressed_node_ = nullptr;
-  return ClickNode(*last_tree_, x, y);
 }
 
 }  // namespace ui::presenter

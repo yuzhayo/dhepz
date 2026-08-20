@@ -1,9 +1,14 @@
 {
   "components": [
     {
+      "type": "window",
+      "title": "dhepz",
+      "initial_route": "home"
+    },
+    {
       "type": "screen",
       "route_id": "home",
-      "tab_label": "Home",
+      "tab_label": "Open terminal",
       "show_in_tabs": true,
       "children": [
         {

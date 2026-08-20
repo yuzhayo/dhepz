@@ -167,7 +167,7 @@ DHEPZ_TEST(ScreenPresenter, ClickFocusesTheHitButton) {
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
 
   // Button sits below the text row: container column, gap 8, text 20 high.
-  DHEPZ_CHECK(presenter.HandleClick(50.0f, 40.0f));
+  DHEPZ_CHECK(presenter.HandleClick(50.0f, 76.0f));
   DHEPZ_CHECK_EQ(presenter.focused(), std::wstring(L"go"));
 }
 
@@ -179,24 +179,25 @@ DHEPZ_TEST(ScreenPresenter, IdleOutlineHoverBrightensPressBumps) {
   presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
   DHEPZ_CHECK(!backend.strokes.empty());
-  DHEPZ_CHECK(backend.fills.empty());  // idle: outline only, no fill
+  // The only fill is the selected tab's tint; idle buttons stay unfilled.
+  DHEPZ_CHECK_EQ(backend.fills.size(), static_cast<std::size_t>(1));
   const render::Color base = backend.strokes.back().second;
   const float base_y = backend.strokes.back().first.y;
 
   // The button sits below the text row.
-  DHEPZ_CHECK(presenter.HandleMove(50.0f, 40.0f));
+  DHEPZ_CHECK(presenter.HandleMove(50.0f, 76.0f));
   backend.strokes.clear();
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
   DHEPZ_CHECK(backend.strokes.back().second.r > base.r);  // brightened outline
   DHEPZ_CHECK_EQ(backend.strokes.back().first.y, base_y);
 
-  DHEPZ_CHECK(presenter.HandleDown(50.0f, 40.0f));
+  DHEPZ_CHECK(presenter.HandleDown(50.0f, 76.0f));
   backend.strokes.clear();
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
   DHEPZ_CHECK(backend.strokes.back().first.y > base_y);  // bumped 1px
 
   // Release clears the press.
-  presenter.HandleClick(50.0f, 40.0f);
+  presenter.HandleClick(50.0f, 76.0f);
   backend.strokes.clear();
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
   DHEPZ_CHECK_EQ(backend.strokes.back().first.y, base_y);
@@ -227,6 +228,37 @@ DHEPZ_TEST(ScreenPresenter, SelectedButtonGetsAccentOutlineAndTint) {
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
   DHEPZ_CHECK(!backend.fills.empty());  // the tint
   DHEPZ_CHECK_EQ(static_cast<int>(backend.strokes.back().second.r), 0x60);  // accent outline
+}
+
+DHEPZ_TEST(ScreenPresenter, TabsSwitchRoutesAndLightTheSelectedTab) {
+  RecordingBackend backend;
+  ui::presenter::ScreenPresenter presenter(&backend);
+  const auto document = Resolve();
+  presenter.SetDocument(document.get());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+
+  // Both routes show in tabs; labels painted; first tab selected (accent).
+  bool saw_home = false, saw_other = false;
+  for (const auto& call : backend.calls) {
+    if (call == L"text:home") saw_home = true;
+    if (call == L"text:other") saw_other = true;
+  }
+  DHEPZ_CHECK(saw_home);
+  DHEPZ_CHECK(saw_other);
+  DHEPZ_CHECK_EQ(static_cast<int>(backend.strokes.front().second.r), 0x60);
+
+  // Click the second tab (x past the first tab's 120px width).
+  DHEPZ_CHECK(presenter.HandleClick(188.0f, 14.0f));
+  DHEPZ_CHECK_EQ(presenter.current_route(), std::wstring(L"other"));
+  backend.calls.clear();
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+  bool saw_second = false;
+  for (const auto& call : backend.calls) {
+    if (call == L"text:second") saw_second = true;
+  }
+  DHEPZ_CHECK(saw_second);
 }
 
 DHEPZ_TEST(ScreenPresenter, RouteSwitchChangesTheDrawSet) {

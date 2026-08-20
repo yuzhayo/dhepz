@@ -64,12 +64,14 @@ class AppWindow final {
 
   bool alive() const { return hwnd_ != nullptr; }
   bool visible() const;
-  bool maximized() const { return maximized_; }
+  // Observed from the OS (Aero snap / future toggle maximize it; the shell
+  // only adapts its margins).
+  bool maximized() const;
   void* hwnd() const { return hwnd_; }
   render::GdiBackend* backend() { return &backend_; }
 
-  // Always-on-top pin: a caption button left of minimise toggles this. The
-  // state is session-only — persistence belongs to the settings module.
+  // Always-on-top pin: the left-most caption button. The state is
+  // session-only — persistence belongs to the settings module.
   void TogglePin();
   bool pinned() const { return pinned_; }
 
@@ -112,6 +114,10 @@ class AppWindow final {
   // Hover and press feedback for content components; return true to repaint.
   void set_content_move_handler(std::function<bool(float x_logical, float y_logical)> handler);
   void set_content_down_handler(std::function<bool(float x_logical, float y_logical)> handler);
+  // The caption band is HTCAPTION for dragging; content that lives in that
+  // band (the tab strip) claims its points through this hook as HTCLIENT,
+  // otherwise clicks become caption drags and hover never arrives.
+  void set_content_hittest_handler(std::function<bool(float x_logical, float y_logical)> handler);
 
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
@@ -123,12 +129,10 @@ class AppWindow final {
 
   void RenderFullFrame();
   void PaintContent();
-  void SetMaximized(bool maximize);
   int Px(float logical) const;
   float Logical(int px) const;
   // Caption buttons left-to-right: pin, settings (only while a settings
-  // handler is registered), min, max/restore, close. Returns the
-  // left-to-right index or -1.
+  // handler is registered), close. Returns the left-to-right index or -1.
   int ButtonAt(int x_px, int y_px) const;
   int ButtonCount() const;
 
@@ -146,13 +150,11 @@ class AppWindow final {
   std::function<bool(float, float)> content_click_handler_;
   std::function<bool(float, float)> content_move_handler_;
   std::function<bool(float, float)> content_down_handler_;
+  std::function<bool(float, float)> content_hittest_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;
-  bool maximized_ = false;
   bool pinned_ = false;
-  int restored_width_px_ = 0;
-  int restored_height_px_ = 0;
   int hover_button_ = -1;
   std::wstring title_ = L"dhepz";
 };
