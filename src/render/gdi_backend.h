@@ -66,6 +66,21 @@ class GdiBackend final : public RenderBackend {
   void EndFrame() override;
   void Present(void* window_handle) override;
 
+  // Presents the buffer through UpdateLayeredWindow, which honours the
+  // buffer's per-pixel alpha — rounded corners and soft shadows included.
+  // The window must have been created with WS_EX_LAYERED.
+  void PresentLayered(void* window_handle);
+
+  // Releases the back buffer and its DC (the window layer). Called on hide:
+  // the buffer is the one large allocation, and it scales with window size.
+  // Resize recreates it on demand.
+  void ReleaseSurface();
+
+  // Sets every pixel to fully transparent. The layered shell needs this:
+  // the compositor blends over whatever the buffer holds, and shadow
+  // regions must stay alpha-zero.
+  void ClearTransparent();
+
   // RenderBackend — invalidation.
   void Invalidate(const Rect& region) override;
   void InvalidateAll() override;
