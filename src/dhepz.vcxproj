@@ -56,11 +56,15 @@
        operator, so a quoted string define cannot survive to rc intact. The
        header keeps version.props the single source of truth for both
        compilers with one mechanism instead of two.
-       WriteOnlyWhenDifferent keeps this from dirtying every build. -->
+
+       Deliberately no Inputs/Outputs: an incremental check against
+       version.props skips the target when the version is overridden on the
+       command line (Build.ps1 -Version), silently baking the stale version
+       into a release build. WriteOnlyWhenDifferent is what keeps this off the
+       incremental critical path — the file is only touched when its content
+       actually changes, so cl and rc do not rebuild spuriously. -->
   <Target Name="GenerateVersionHeader"
-          BeforeTargets="PrepareForBuild;ResourceCompile;ClCompile"
-          Inputs="$(ProjectDir)..\version.props"
-          Outputs="$(GeneratedDir)dhepz_version_generated.h">
+          BeforeTargets="PrepareForBuild;ResourceCompile;ClCompile">
     <MakeDir Directories="$(GeneratedDir)" />
     <WriteLinesToFile File="$(GeneratedDir)dhepz_version_generated.h"
                       Overwrite="true"
