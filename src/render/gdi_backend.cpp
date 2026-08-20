@@ -477,6 +477,33 @@ void GdiBackend::Present(void* window_handle) {
   ReleaseDC(window, target);
 }
 
+void GdiBackend::PresentLayered(void* window_handle) {
+  if (impl_->pixels == nullptr || window_handle == nullptr) return;
+  const HWND window = static_cast<HWND>(window_handle);
+  const HDC screen = GetDC(nullptr);
+  if (screen == nullptr) return;
+
+  POINT screen_origin{};
+  ClientToScreen(window, &screen_origin);
+  SIZE size{impl_->buffer_width, impl_->buffer_height};
+  POINT buffer_origin{0, 0};
+  BLENDFUNCTION blend{};
+  blend.BlendOp = AC_SRC_OVER;
+  blend.SourceConstantAlpha = 255;
+  blend.AlphaFormat = AC_SRC_ALPHA;  // buffer is premultiplied
+  UpdateLayeredWindow(window, screen, &screen_origin, &size, impl_->buffer_dc, &buffer_origin, 0,
+                      &blend, ULW_ALPHA);
+  ReleaseDC(window, screen);
+}
+
+void GdiBackend::ReleaseSurface() { impl_->ReleaseBuffer(); }
+
+void GdiBackend::ClearTransparent() {
+  if (impl_->pixels == nullptr) return;
+  std::fill_n(impl_->pixels,
+              static_cast<std::size_t>(impl_->buffer_width) * impl_->buffer_height, 0u);
+}
+
 ImageHandle GdiBackend::LoadImageFile(std::wstring_view path) {
   ImageData image;
   HANDLE file = CreateFileW(std::wstring(path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
