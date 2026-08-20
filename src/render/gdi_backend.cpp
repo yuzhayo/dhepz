@@ -6,9 +6,10 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <map>
 #include <string>
 #include <vector>
+
+#include "render/gdi_resource_cache.h"
 
 namespace render {
 namespace {
@@ -52,26 +53,6 @@ std::uint32_t SourceOverPremultiplied(std::uint32_t destination, std::uint32_t s
   return (std::min(255u, alpha) << 24) | (std::min(255u, red) << 16) |
          (std::min(255u, green) << 8) | std::min(255u, blue);
 }
-
-struct ImageData {
-  int width = 0;
-  int height = 0;
-  std::vector<std::uint32_t> pixels;  // premultiplied, same packing as the buffer
-};
-
-struct FontKey {
-  std::wstring family;
-  int height_px = 0;
-  int weight = FW_NORMAL;
-  bool italic = false;
-
-  bool operator<(const FontKey& other) const noexcept {
-    if (family != other.family) return family < other.family;
-    if (height_px != other.height_px) return height_px < other.height_px;
-    if (weight != other.weight) return weight < other.weight;
-    return italic < other.italic;
-  }
-};
 
 int ToGdiWeight(FontWeight weight) noexcept {
   switch (weight) {
@@ -148,9 +129,8 @@ struct GdiBackend::Impl {
   std::vector<Point> translations;
 
   HDC measurement_dc = nullptr;
-  std::map<FontKey, HFONT> fonts;
-  std::map<std::uint64_t, ImageData> images;
-  std::uint64_t next_image = 1;
+  GdiResourceCache* cache = nullptr;
+  bool owns_cache = false;
 
   float scale() const noexcept { return dpi / 96.0f; }
 
@@ -272,24 +252,19 @@ struct GdiBackend::Impl {
   }
 
   HFONT FontFor(const TextStyle& style) noexcept {
-    FontKey key{style.family, Physical(style.size_px), ToGdiWeight(style.weight), style.italic};
-    if (const auto found = fonts.find(key); found != fonts.end()) {
-      return found->second;
+    // Fonts live in the shared cache's theme layer: created on demand,
+    // bounded, and discarded wholesale by an epoch bump. Warmed fonts are
+    // usable inside a frame; CREATING one mid-frame is the bug the guard
+    // exists to catch.
+    FontSpec spec{style.family, Physical(style.size_px), ToGdiWeight(style.weight), style.italic};
+    if (const HFONT cached = cache->FindFont(spec)) {
+      return cached;
     }
     if (in_paint_scope) {
-      // Fonts are warmed by layout (MeasureText) before the frame. Creating
-      // one mid-frame is the bug the guard exists to catch.
       OutputDebugStringW(L"dhepz: font creation refused inside a paint scope\n");
       return nullptr;
     }
-    const HFONT font = CreateFontW(-key.height_px, 0, 0, 0, key.weight, key.italic ? TRUE : FALSE,
-                                   FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                                   DEFAULT_PITCH | FF_DONTCARE, key.family.c_str());
-    if (font != nullptr) {
-      fonts.emplace(std::move(key), font);
-    }
-    return font;
+    return cache->Font(spec);
   }
 
   // Restores the buffer's opaque-alpha invariant over a region after a GDI
@@ -392,11 +367,12 @@ struct GdiBackend::Impl {
     ReleaseBuffer();
     if (measurement_dc != nullptr) DeleteDC(measurement_dc);
     measurement_dc = nullptr;
-    for (const auto& entry : fonts) {
-      DeleteObject(entry.second);
+    // The window layer (this buffer) dies with the backend; the shared
+    // layers survive unless this backend owns the cache outright.
+    if (owns_cache) {
+      delete cache;
     }
-    fonts.clear();
-    images.clear();
+    cache = nullptr;
   }
 
   // Accumulates one region into the pending union, clipped to the surface.
@@ -421,7 +397,16 @@ struct GdiBackend::Impl {
   }
 };
 
-GdiBackend::GdiBackend() : impl_(std::make_unique<Impl>()) {}
+GdiBackend::GdiBackend(GdiResourceCache* shared_cache) : impl_(std::make_unique<Impl>()) {
+  if (shared_cache != nullptr) {
+    impl_->cache = shared_cache;
+    impl_->owns_cache = false;
+  } else {
+    impl_->cache = new GdiResourceCache();
+    impl_->owns_cache = true;
+  }
+}
+
 GdiBackend::~GdiBackend() { impl_->ReleaseAll(); }
 
 void GdiBackend::Resize(Size logical_size) {
@@ -457,12 +442,9 @@ bool GdiBackend::TakeInvalidation(Rect& out) {
 void GdiBackend::SetDpi(float dpi) {
   if (dpi <= 0.0f) return;
   impl_->dpi = dpi;
-  // Fonts are keyed by physical height; a DPI change orphans them. The
-  // epoch/cache machinery of #19 will manage this at scale.
-  for (const auto& entry : impl_->fonts) {
-    DeleteObject(entry.second);
-  }
-  impl_->fonts.clear();
+  // A DPI change is an epoch change: the theme layer is discarded in one
+  // operation and fonts re-resolve at the new physical heights.
+  impl_->cache->AdvanceEpoch();
   if (impl_->logical_size.width > 0.0f) {
     Resize(impl_->logical_size);
   }
@@ -515,13 +497,13 @@ ImageHandle GdiBackend::LoadImageFile(std::wstring_view path) {
     return ImageHandle::Invalid;
   }
 
-  const std::uint64_t id = impl_->next_image++;
-  impl_->images.emplace(id, std::move(image));
+  // Process layer of the shared cache: decoded once, survives every window.
+  const std::uint64_t id = impl_->cache->StoreImage(std::move(image));
   return static_cast<ImageHandle>(id);
 }
 
 void GdiBackend::ReleaseImage(ImageHandle image) {
-  impl_->images.erase(static_cast<std::uint64_t>(image));
+  impl_->cache->ReleaseImage(static_cast<std::uint64_t>(image));
 }
 
 Size GdiBackend::MeasureText(std::wstring_view text, const TextStyle& style, float max_width) {
@@ -614,9 +596,9 @@ void GdiBackend::DrawTextRun(std::wstring_view text, const Rect& bounds, const T
 
 void GdiBackend::DrawImage(ImageHandle image, const Rect& dest, float opacity) {
   if (!impl_->in_paint_scope || impl_->pixels == nullptr || opacity <= 0.0f) return;
-  const auto found = impl_->images.find(static_cast<std::uint64_t>(image));
-  if (found == impl_->images.end()) return;
-  const ImageData& source = found->second;
+  const ImageData* source_ptr = impl_->cache->Image(static_cast<std::uint64_t>(image));
+  if (source_ptr == nullptr) return;
+  const ImageData& source = *source_ptr;
 
   const RECT clip = impl_->EffectiveClip();
   const RECT region = impl_->PhysicalRect(dest);
@@ -679,6 +661,12 @@ std::uint32_t GdiBackend::PixelAt(int x, int y) const {
     return 0;
   }
   return impl_->pixels[static_cast<std::size_t>(y) * impl_->buffer_width + x];
+}
+
+CacheSizes GdiBackend::cache_sizes() const { return impl_->cache->Sizes(); }
+
+void GdiBackend::FillSnapshot(trace::ResourceSnapshot& snapshot) const {
+  impl_->cache->FillSnapshot(snapshot);
 }
 
 }  // namespace render
