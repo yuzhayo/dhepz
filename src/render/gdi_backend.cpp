@@ -140,6 +140,10 @@ struct GdiBackend::Impl {
   bool in_paint_scope = false;
   Rect dirty{};
 
+  // Pending invalidation in logical coordinates, coalesced into its union.
+  Rect invalidation{};
+  bool has_invalidation = false;
+
   std::vector<Rect> clips;
   std::vector<Point> translations;
 
@@ -394,15 +398,60 @@ struct GdiBackend::Impl {
     fonts.clear();
     images.clear();
   }
+
+  // Accumulates one region into the pending union, clipped to the surface.
+  void AddInvalidation(const Rect& region) noexcept {
+    if (logical_size.width <= 0.0f || logical_size.height <= 0.0f) return;
+    const float left = std::max(0.0f, region.x);
+    const float top = std::max(0.0f, region.y);
+    const float right = std::min(logical_size.width, region.right());
+    const float bottom = std::min(logical_size.height, region.bottom());
+    if (right <= left || bottom <= top) return;
+    if (!has_invalidation) {
+      invalidation = Rect{left, top, right - left, bottom - top};
+      has_invalidation = true;
+      return;
+    }
+    const float merged_left = std::min(invalidation.x, left);
+    const float merged_top = std::min(invalidation.y, top);
+    const float merged_right = std::max(invalidation.right(), right);
+    const float merged_bottom = std::max(invalidation.bottom(), bottom);
+    invalidation = Rect{merged_left, merged_top, merged_right - merged_left,
+                        merged_bottom - merged_top};
+  }
 };
 
 GdiBackend::GdiBackend() : impl_(std::make_unique<Impl>()) {}
 GdiBackend::~GdiBackend() { impl_->ReleaseAll(); }
 
 void GdiBackend::Resize(Size logical_size) {
+  const int old_width = impl_->buffer_width;
+  const int old_height = impl_->buffer_height;
   impl_->logical_size = logical_size;
   impl_->EnsureBuffer(impl_->Physical(logical_size.width),
                       impl_->Physical(logical_size.height));
+  // A fresh or resized buffer has no presented content: everything must be
+  // painted on the next frame.
+  if (impl_->buffer_width != old_width || impl_->buffer_height != old_height) {
+    InvalidateAll();
+  }
+}
+
+void GdiBackend::Invalidate(const Rect& region) { impl_->AddInvalidation(region); }
+
+void GdiBackend::InvalidateAll() {
+  impl_->AddInvalidation(Rect{0.0f, 0.0f, impl_->logical_size.width,
+                              impl_->logical_size.height});
+}
+
+bool GdiBackend::HasInvalidation() const { return impl_->has_invalidation; }
+
+bool GdiBackend::TakeInvalidation(Rect& out) {
+  if (!impl_->has_invalidation) return false;
+  out = impl_->invalidation;
+  impl_->invalidation = Rect{};
+  impl_->has_invalidation = false;
+  return true;
 }
 
 void GdiBackend::SetDpi(float dpi) {

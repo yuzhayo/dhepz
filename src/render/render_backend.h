@@ -144,6 +144,18 @@ class RenderBackend {
   // the shell knows what it really is.
   virtual void Present(void* window_handle) = 0;
 
+  // Invalidation. A component marks what changed; the regions accumulate,
+  // coalescing into their union. TakeInvalidation atomically takes and
+  // clears the pending region — the shell then opens exactly one frame
+  // clipped to it, so ten invalidations in one message-loop iteration cost
+  // one paint. Invalidating while no window is visible merely accumulates:
+  // nothing paints and nothing is armed (G1). Regions are clipped to the
+  // surface.
+  virtual void Invalidate(const Rect& region) = 0;
+  virtual void InvalidateAll() = 0;
+  virtual bool HasInvalidation() const = 0;
+  virtual bool TakeInvalidation(Rect& out) = 0;
+
   // Resources. Valid at any time; the backend owns what it returns.
   virtual ImageHandle LoadImageFile(std::wstring_view path) = 0;
   virtual void ReleaseImage(ImageHandle image) = 0;
