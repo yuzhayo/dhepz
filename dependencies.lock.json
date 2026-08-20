@@ -1,0 +1,21 @@
+{
+  "$comment": [
+    "Pinned third-party dependencies. Velopack is the only third-party runtime",
+    "dependency this project has, deliberately. Each entry carries a sha256 that",
+    "Restore-Dependencies.ps1 verifies; a version string alone would let a",
+    "re-tagged release change the bytes under us without notice.",
+    "nlohmann/json is NOT ported from the old build: it existed only to",
+    "serialise IPC JSON, and the named-pipe protocol here is fixed-layout.",
+    "core/json (issue #6) is written from scratch instead."
+  ],
+  "velopack": {
+    "version": "1.2.0",
+    "asset": "velopack_libc_1.2.0.zip",
+    "url": "https://github.com/velopack/velopack/releases/download/1.2.0/velopack_libc_1.2.0.zip",
+    "sha256": "547262ED7A1AB1FF62F580AA53851EDE2F1A451AC61B8974EB7BC01117488835",
+    "header": "include/Velopack.hpp",
+    "importLibrary": "lib/velopack_libc_win_x64_msvc.dll.lib",
+    "runtime": "lib/velopack_libc_win_x64_msvc.dll",
+    "$staticAlternative": "lib-static/velopack_libc_win_x64_msvc.lib exists in the same archive (9 MB). Linking it would remove the sidecar DLL from the install, at an unmeasured cost in EXE size and cold-start paging. Decide in Phase 6 (issue #28) with a measurement, not now."
+  }
+}
