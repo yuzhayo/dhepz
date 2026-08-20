@@ -44,145 +44,447 @@
     }
   },
   "fonts": {
-    "ui": { "family": "Segoe UI" },
-    "mono": { "family": "Cascadia Mono" }
-  },
-  "spacing": { "xs": 2, "sm": 4, "md": 8, "lg": 12, "xl": 16, "xxl": 24 },
-  "common": {
-    "properties": {
-      "id": { "kind": "string" },
-      "style": { "kind": "string" },
-      "visible": { "kind": "bool" },
-      "enabled": { "kind": "bool" }
+    "ui": {
+      "family": "Segoe UI"
+    },
+    "mono": {
+      "family": "Cascadia Mono"
     }
   },
-  "allows_children": ["window", "screen", "container", "card", "dialog", "tabs"],
+  "spacing": {
+    "xs": 2,
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "xl": 16,
+    "xxl": 24
+  },
+  "common": {
+    "properties": {
+      "id": {
+        "kind": "string"
+      },
+      "style": {
+        "kind": "string"
+      },
+      "visible": {
+        "kind": "bool",
+        "default": true
+      },
+      "enabled": {
+        "kind": "bool",
+        "default": true
+      }
+    }
+  },
+  "allows_children": [
+    "window",
+    "screen",
+    "container",
+    "card",
+    "dialog",
+    "tabs"
+  ],
   "components": {
     "window": {
       "properties": {
-        "title": { "kind": "text", "required": true },
-        "initial_route": { "kind": "string" },
-        "initial_width": { "kind": "int" },
-        "initial_height": { "kind": "int" },
-        "minimum_width": { "kind": "int" },
-        "minimum_height": { "kind": "int" },
-        "resizable": { "kind": "bool" }
+        "title": {
+          "kind": "text",
+          "required": true
+        },
+        "initial_route": {
+          "kind": "string"
+        },
+        "initial_width": {
+          "kind": "int",
+          "default": 760
+        },
+        "initial_height": {
+          "kind": "int",
+          "default": 520
+        },
+        "minimum_width": {
+          "kind": "int",
+          "default": 620
+        },
+        "minimum_height": {
+          "kind": "int",
+          "default": 420
+        },
+        "resizable": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "screen": {
       "properties": {
-        "route_id": { "kind": "string", "required": true },
-        "tab_label": { "kind": "string" },
-        "show_in_tabs": { "kind": "bool" },
-        "select_rules": { "kind": "array" }
+        "route_id": {
+          "kind": "string",
+          "required": true
+        },
+        "tab_label": {
+          "kind": "string"
+        },
+        "show_in_tabs": {
+          "kind": "bool",
+          "default": true
+        },
+        "select_rules": {
+          "kind": "array"
+        }
       }
     },
     "container": {
       "properties": {
-        "direction": { "kind": "enum", "values": ["row", "column", "grid", "flow"] },
-        "gap": { "kind": "int" },
-        "padding": { "kind": "object" },
-        "align": { "kind": "enum", "values": ["start", "center", "end", "stretch"] },
-        "justify": { "kind": "enum", "values": ["start", "center", "end", "space-between"] },
-        "wrap": { "kind": "bool" },
-        "overflow": { "kind": "enum", "values": ["visible", "clip", "scroll"] }
+        "direction": {
+          "kind": "enum",
+          "values": [
+            "row",
+            "column",
+            "grid",
+            "flow"
+          ],
+          "default": "column"
+        },
+        "gap": {
+          "kind": "int",
+          "default": 8
+        },
+        "padding": {
+          "kind": "object"
+        },
+        "align": {
+          "kind": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "stretch"
+          ],
+          "default": "stretch"
+        },
+        "justify": {
+          "kind": "enum",
+          "values": [
+            "start",
+            "center",
+            "end",
+            "space-between"
+          ],
+          "default": "start"
+        },
+        "wrap": {
+          "kind": "bool",
+          "default": false
+        },
+        "overflow": {
+          "kind": "enum",
+          "values": [
+            "visible",
+            "clip",
+            "scroll"
+          ],
+          "default": "visible"
+        }
       }
     },
     "text": {
       "properties": {
-        "text": { "kind": "text", "required": true },
-        "variant": { "kind": "enum", "values": ["body", "title", "caption", "monospace"] },
-        "wrap": { "kind": "bool" },
-        "selectable": { "kind": "bool" },
-        "align": { "kind": "enum", "values": ["start", "center", "end"] }
+        "text": {
+          "kind": "text",
+          "required": true
+        },
+        "variant": {
+          "kind": "enum",
+          "values": [
+            "body",
+            "title",
+            "caption",
+            "monospace"
+          ],
+          "default": "body"
+        },
+        "wrap": {
+          "kind": "bool",
+          "default": true
+        },
+        "selectable": {
+          "kind": "bool",
+          "default": false
+        },
+        "align": {
+          "kind": "enum",
+          "values": [
+            "start",
+            "center",
+            "end"
+          ],
+          "default": "start"
+        }
       }
     },
     "button": {
       "properties": {
-        "label": { "kind": "text", "required": true },
-        "variant": { "kind": "enum", "values": ["default", "primary", "subtle", "danger", "navigation", "bookmark"] },
-        "selected": { "kind": "binding" },
-        "press_selects": { "kind": "bool" },
-        "tab_stop": { "kind": "bool" }
+        "label": {
+          "kind": "text",
+          "required": true
+        },
+        "variant": {
+          "kind": "enum",
+          "values": [
+            "default",
+            "primary",
+            "subtle",
+            "danger",
+            "navigation",
+            "bookmark"
+          ],
+          "default": "default"
+        },
+        "selected": {
+          "kind": "binding",
+          "default": false
+        },
+        "press_selects": {
+          "kind": "bool",
+          "default": false
+        },
+        "tab_stop": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "input": {
       "properties": {
-        "value_binding": { "kind": "binding" },
-        "mode": { "kind": "enum", "values": ["single_line", "multiline"] },
-        "placeholder": { "kind": "string" },
-        "read_only": { "kind": "bool" },
-        "password": { "kind": "bool" },
-        "maximum_length": { "kind": "int" },
-        "horizontal_align": { "kind": "enum", "values": ["start", "center", "end"] },
-        "scrollbar": { "kind": "enum", "values": ["auto", "never"] },
-        "tab_stop": { "kind": "bool" }
+        "value_binding": {
+          "kind": "binding"
+        },
+        "mode": {
+          "kind": "enum",
+          "values": [
+            "single_line",
+            "multiline"
+          ],
+          "default": "single_line"
+        },
+        "placeholder": {
+          "kind": "string"
+        },
+        "read_only": {
+          "kind": "bool",
+          "default": false
+        },
+        "password": {
+          "kind": "bool",
+          "default": false
+        },
+        "maximum_length": {
+          "kind": "int",
+          "default": 4096
+        },
+        "horizontal_align": {
+          "kind": "enum",
+          "values": [
+            "start",
+            "center",
+            "end"
+          ],
+          "default": "start"
+        },
+        "scrollbar": {
+          "kind": "enum",
+          "values": [
+            "auto",
+            "never"
+          ],
+          "default": "auto"
+        },
+        "tab_stop": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "combo": {
       "properties": {
-        "items_binding": { "kind": "binding" },
-        "selected_value_binding": { "kind": "binding" },
-        "placeholder": { "kind": "string" },
-        "maximum_visible_items": { "kind": "int" },
-        "popup_maximum_height": { "kind": "int" },
-        "allow_empty": { "kind": "bool" },
-        "tab_stop": { "kind": "bool" }
+        "items_binding": {
+          "kind": "binding"
+        },
+        "selected_value_binding": {
+          "kind": "binding"
+        },
+        "placeholder": {
+          "kind": "string"
+        },
+        "maximum_visible_items": {
+          "kind": "int",
+          "default": 10
+        },
+        "popup_maximum_height": {
+          "kind": "int",
+          "default": 480
+        },
+        "allow_empty": {
+          "kind": "bool",
+          "default": true
+        },
+        "tab_stop": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "checkbox": {
       "properties": {
-        "label": { "kind": "text" },
-        "checked_binding": { "kind": "binding" },
-        "tri_state": { "kind": "bool" },
-        "tab_stop": { "kind": "bool" }
+        "label": {
+          "kind": "text"
+        },
+        "checked_binding": {
+          "kind": "binding"
+        },
+        "tri_state": {
+          "kind": "bool",
+          "default": false
+        },
+        "tab_stop": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "toggle": {
       "properties": {
-        "label": { "kind": "text" },
-        "checked_binding": { "kind": "binding" },
-        "variant": { "kind": "string" },
-        "tab_stop": { "kind": "bool" }
+        "label": {
+          "kind": "text"
+        },
+        "checked_binding": {
+          "kind": "binding"
+        },
+        "variant": {
+          "kind": "string",
+          "default": "default"
+        },
+        "tab_stop": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "card": {
       "properties": {
-        "interactive": { "kind": "bool" },
-        "selected": { "kind": "binding" },
-        "tab_stop": { "kind": "bool" }
+        "interactive": {
+          "kind": "bool",
+          "default": false
+        },
+        "selected": {
+          "kind": "binding",
+          "default": false
+        },
+        "tab_stop": {
+          "kind": "bool",
+          "default": false
+        }
       }
     },
     "list": {
       "properties": {
-        "items_binding": { "kind": "binding" },
-        "item_template": { "kind": "object" },
-        "selected_id_binding": { "kind": "binding" },
-        "row_height": { "kind": "int" },
-        "overscan_rows": { "kind": "int" },
-        "selection": { "kind": "enum", "values": ["none", "single"] },
-        "empty_text": { "kind": "string" },
-        "scrollbar": { "kind": "enum", "values": ["auto", "never"] },
-        "tab_stop": { "kind": "bool" }
+        "items_binding": {
+          "kind": "binding"
+        },
+        "item_template": {
+          "kind": "object"
+        },
+        "selected_id_binding": {
+          "kind": "binding"
+        },
+        "row_height": {
+          "kind": "int",
+          "default": 32
+        },
+        "overscan_rows": {
+          "kind": "int",
+          "default": 2
+        },
+        "selection": {
+          "kind": "enum",
+          "values": [
+            "none",
+            "single"
+          ],
+          "default": "single"
+        },
+        "empty_text": {
+          "kind": "string",
+          "default": "Tidak ada data"
+        },
+        "scrollbar": {
+          "kind": "enum",
+          "values": [
+            "auto",
+            "never"
+          ],
+          "default": "auto"
+        },
+        "tab_stop": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "scrollbar": {
       "properties": {
-        "orientation": { "kind": "enum", "values": ["vertical", "horizontal"] },
-        "thickness": { "kind": "int" },
-        "minimum_thumb_length": { "kind": "int" },
-        "line_step": { "kind": "int" },
-        "page_step": { "kind": "int" }
+        "orientation": {
+          "kind": "enum",
+          "values": [
+            "vertical",
+            "horizontal"
+          ],
+          "default": "vertical"
+        },
+        "thickness": {
+          "kind": "int",
+          "default": 12
+        },
+        "minimum_thumb_length": {
+          "kind": "int",
+          "default": 24
+        },
+        "line_step": {
+          "kind": "int",
+          "default": 1
+        },
+        "page_step": {
+          "kind": "int"
+        }
       }
     },
     "dialog": {
       "properties": {
-        "title": { "kind": "text" },
-        "width": { "kind": "int" },
-        "maximum_height": { "kind": "int" },
-        "dismiss_escape": { "kind": "bool" },
-        "dismiss_outside_click": { "kind": "bool" },
-        "dismiss_explicit_action": { "kind": "bool" }
+        "title": {
+          "kind": "text"
+        },
+        "width": {
+          "kind": "int",
+          "default": 480
+        },
+        "maximum_height": {
+          "kind": "int",
+          "default": 720
+        },
+        "dismiss_escape": {
+          "kind": "bool",
+          "default": true
+        },
+        "dismiss_outside_click": {
+          "kind": "bool",
+          "default": false
+        },
+        "dismiss_explicit_action": {
+          "kind": "bool",
+          "default": true
+        }
       }
     },
     "tabs": {

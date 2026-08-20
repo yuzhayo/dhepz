@@ -35,6 +35,9 @@ bool IsInteger(const json::Value& value) {
   return number == static_cast<long long>(number);
 }
 
+bool KindMatches(const json::Value& value, std::wstring_view kind,
+                 const json::Value* definition);
+
 // Validates one "properties" map of a catalog entry: each definition is an
 // object with a known kind; enums carry a non-empty string values array.
 void ValidatePropertyDefinitions(const json::Value& properties, std::wstring_view owner,
@@ -77,6 +80,11 @@ void ValidatePropertyDefinitions(const json::Value& properties, std::wstring_vie
       Add(out, *required, L"catalog '" + std::wstring(owner) + L"." + name +
                               L"': 'required' must be a bool");
     }
+    const json::Value* default_value = definition.Find(L"default");
+    if (default_value != nullptr && !KindMatches(*default_value, kind_text, &definition)) {
+      Add(out, *default_value, L"catalog '" + std::wstring(owner) + L"." + name +
+                                   L"': 'default' does not match kind '" + kind_text + L"'");
+    }
   }
 }
 
@@ -94,7 +102,9 @@ bool KindMatches(const json::Value& value, std::wstring_view kind,
   if (kind == L"int") return IsInteger(value);
   if (kind == L"object") return value.is_object();
   if (kind == L"array") return value.is_array();
-  if (kind == L"binding") return value.is_string() || value.is_object();
+  if (kind == L"binding") {
+    return value.is_string() || value.is_object() || value.is_bool() || value.is_number();
+  }
   if (kind == L"enum") {
     if (!value.is_string()) return false;
     const json::Value* values = definition->ArrayField(L"values");
