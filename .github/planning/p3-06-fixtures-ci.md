@@ -1,23 +1,20 @@
-P3-06 Broken-module fixtures and contract-validation CI
+P3-06 Phase 3 gate verification
 
 Scope
-- Add three fixture module folders to tests/fixtures/modules:
-  1) healthy module
-  2) module with a typo'd action
-  3) module with malformed module.json
-- Add CI step that runs the gate against these fixtures and asserts the expected degraded-mode behaviour.
+- Consolidate Phase 3 verification and run the gate checklist as required by .docs/plan.md.
 
-Acceptance criteria
-- CI asserts the healthy module becomes active while the broken modules are reported in diagnostics.
-- CI fails if a broken module causes the app to crash or if the healthy module disappears.
-- CI publishes a diagnostics artifact describing failures in a machine-readable and human-friendly way.
+Acceptance criteria (gate)
+- Three module folders present: one healthy, one typo'd action, one malformed JSON.
+- App starts; the healthy module works; the broken ones appear in diagnostics with reasons; nothing else is affected.
+- Deleting the healthy folder and rebuilding removes it cleanly with no other file edited.
+- CI asserts all of the above, and a regression in degraded mode fails the build.
 
 Verification
-- CI run with the fixture set passes the gate checks and produces the diagnostics artifact on failure for debugging.
+- Integration and CI checks defined plainly and run automatically as part of the contract-validation step.
 
-Why this next
-- Repeated enforcement in CI prevents regressions in the gate and degraded mode.
+Why this last
+- This gate closes Phase 3 and prevents Phase 4 from beginning until the contract is proven.
 
-Scope: S
+Scope: M
 
-Do not start until: P3-05 is merged.
+Do not start until: P3-05 is merged and CI is configured to run the fixture checks.
