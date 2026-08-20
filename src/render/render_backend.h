@@ -26,7 +26,7 @@
 // Paint scope
 //   - Drawing calls (Fill*, Stroke*, Draw*, Push*/Pop*) are valid only
 //     between BeginFrame and EndFrame. Outside that scope they are errors.
-//   - MeasureText, LoadImage, ReleaseImage, Resize, and SetDpi are valid at
+//   - MeasureText, LoadImageFile, ReleaseImage, Resize, and SetDpi are valid at
 //     any time. Measurement in particular MUST work without a live paint
 //     scope: layout runs before paint, often several times per frame.
 //
@@ -145,7 +145,7 @@ class RenderBackend {
   virtual void Present(void* window_handle) = 0;
 
   // Resources. Valid at any time; the backend owns what it returns.
-  virtual ImageHandle LoadImage(std::wstring_view path) = 0;
+  virtual ImageHandle LoadImageFile(std::wstring_view path) = 0;
   virtual void ReleaseImage(ImageHandle image) = 0;
 
   // Measurement. Valid OUTSIDE a paint scope — layout depends on it.
@@ -159,7 +159,7 @@ class RenderBackend {
   virtual void FillRoundedRect(const Rect& rect, const CornerRadius& radius, Color color) = 0;
   virtual void StrokeRoundedRect(const Rect& rect, const CornerRadius& radius, Color color,
                                  float stroke_width) = 0;
-  virtual void DrawText(std::wstring_view text, const Rect& bounds, const TextStyle& style,
+  virtual void DrawTextRun(std::wstring_view text, const Rect& bounds, const TextStyle& style,
                         Color color, TextAlign horizontal, VerticalAlign vertical) = 0;
   virtual void DrawImage(ImageHandle image, const Rect& dest, float opacity) = 0;
 

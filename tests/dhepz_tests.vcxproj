@@ -121,6 +121,7 @@
     <ClCompile Include="**\*.cpp" />
     <ClCompile Include="..\src\core\**\*.cpp" />
     <ClCompile Include="..\src\platform\**\*.cpp" />
+    <ClCompile Include="..\src\render\**\*.cpp" />
     <ClInclude Include="**\*.h" />
   </ItemGroup>
 
