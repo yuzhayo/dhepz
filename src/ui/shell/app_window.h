@@ -68,6 +68,11 @@ class AppWindow final {
   void* hwnd() const { return hwnd_; }
   render::GdiBackend* backend() { return &backend_; }
 
+  // Always-on-top pin: a caption button left of minimise toggles this. The
+  // state is session-only — persistence belongs to the settings module.
+  void TogglePin();
+  bool pinned() const { return pinned_; }
+
   // Verification hooks: the lifecycle steps the message handler takes,
   // callable directly so tests do not need a message pump.
   void OnResized(int width_px, int height_px);
@@ -87,6 +92,11 @@ class AppWindow final {
   // idle. This is the hook settle-time measurement (ETW) attaches to.
   void set_settle_handler(std::function<void()> handler);
 
+  // Opens the settings screen (Phase 5 wires this). While no handler is
+  // registered the caption's settings button does not render at all — no
+  // dead UI. Registering a handler adds the button.
+  void set_settings_handler(std::function<void()> handler);
+
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
                                         unsigned long long wparam, long long lparam);
@@ -100,9 +110,11 @@ class AppWindow final {
   void SetMaximized(bool maximize);
   int Px(float logical) const;
   float Logical(int px) const;
-  // Button index (0 min, 1 max/restore, 2 close) at physical client coords,
-  // or -1.
+  // Caption buttons left-to-right: pin, settings (only while a settings
+  // handler is registered), min, max/restore, close. Returns the
+  // left-to-right index or -1.
   int ButtonAt(int x_px, int y_px) const;
+  int ButtonCount() const;
 
   void* instance_ = nullptr;
   void* hwnd_ = nullptr;  // HWND
@@ -111,10 +123,12 @@ class AppWindow final {
   std::unique_ptr<platform::SettleTimer> settle_timer_;
   std::function<void(std::uint32_t)> signal_handler_;
   std::function<void()> settle_handler_;
+  std::function<void()> settings_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;
   bool maximized_ = false;
+  bool pinned_ = false;
   int restored_width_px_ = 0;
   int restored_height_px_ = 0;
   int hover_button_ = -1;
