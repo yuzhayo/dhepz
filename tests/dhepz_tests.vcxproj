@@ -81,7 +81,7 @@
       <DataExecutionPrevention>true</DataExecutionPrevention>
       <HighEntropyVA>true</HighEntropyVA>
       <ControlFlowGuard>Guard</ControlFlowGuard>
-      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;shlwapi.lib;advapi32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;shlwapi.lib;advapi32.lib;ole32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -124,6 +124,7 @@
     <ClCompile Include="..\src\render\**\*.cpp" />
     <ClCompile Include="..\src\ui\config\**\*.cpp" />
     <ClCompile Include="..\src\ui\shell\**\*.cpp" />
+    <ClCompile Include="..\src\ui\theme\**\*.cpp" />
     <ClInclude Include="**\*.h" />
     <ResourceCompile Include="app_icon.rc" />
   </ItemGroup>
