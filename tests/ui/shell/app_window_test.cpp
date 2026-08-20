@@ -175,3 +175,32 @@ DHEPZ_TEST(AppWindow, FontsSurviveWindowCloseThroughTheSharedCache) {
                    static_cast<unsigned long long>(fonts_after_close));
   }
 }
+
+DHEPZ_TEST(AppWindow, WarmShowFitsTheBudget) {
+  // The Part 1 budget: warm show (resident, hidden) to visible ≤ 120 ms p95.
+  // Proxy until the app integration wires the window into the resident
+  // process: the shell's own Show() from hidden — buffer rebuild, full
+  // offscreen frame, present, ShowWindow.
+  shell::AppWindow window;
+  DHEPZ_CHECK(window.Create(TestInstance()));  // default 960x640 content
+  window.Show();
+  PumpFor(30);
+  window.Hide();
+
+  LARGE_INTEGER frequency{};
+  QueryPerformanceFrequency(&frequency);
+  LARGE_INTEGER start{};
+  QueryPerformanceCounter(&start);
+  window.Show();
+  LARGE_INTEGER end{};
+  QueryPerformanceCounter(&end);
+  const double ms = static_cast<double>(end.QuadPart - start.QuadPart) * 1000.0 /
+                    static_cast<double>(frequency.QuadPart);
+  DHEPZ_CHECK(window.visible());
+#ifdef NDEBUG
+  DHEPZ_CHECK(ms < 120.0);  // the Part 1 warm-show budget
+#else
+  // Debug runs the pixel loops unoptimised; the budget is asserted in Release.
+  DHEPZ_CHECK(ms < 2000.0);
+#endif
+}
