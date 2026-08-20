@@ -4,6 +4,8 @@
 #include <shellapi.h>
 #include <windowsx.h>
 
+#include "resource.h"
+
 namespace tray {
 namespace {
 
@@ -182,9 +184,7 @@ void TrayProcess::AddTrayIcon() noexcept {
   icon.uID = kTrayIconId;
   icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
   icon.uCallbackMessage = kTrayCallbackMessage;
-  // The real icon lands with the assets work (#24); the system application
-  // icon keeps the tray entry visible and honest until then.
-  icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+  icon.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON));
   wcscpy_s(icon.szTip, L"dhepz");
   if (icon.hIcon == nullptr || !Shell_NotifyIconW(NIM_ADD, &icon)) {
     tray_icon_added_ = false;

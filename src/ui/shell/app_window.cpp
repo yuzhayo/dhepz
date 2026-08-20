@@ -9,6 +9,7 @@
 #include "platform/settle_timer.h"
 #include "platform/signal_fanout.h"
 #include "render/gdi_resource_cache.h"
+#include "resource.h"
 
 namespace shell {
 namespace {
@@ -73,12 +74,17 @@ AppWindow::~AppWindow() { Destroy(); }
 bool AppWindow::Create(void* instance, float content_width, float content_height) {
   instance_ = instance;
 
-  WNDCLASSW window_class{};
+  WNDCLASSEXW window_class{};
+  window_class.cbSize = sizeof(window_class);
   window_class.lpfnWndProc = reinterpret_cast<WNDPROC>(&AppWindow::WindowProc);
   window_class.hInstance = static_cast<HINSTANCE>(instance);
   window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+  window_class.hIcon = LoadIconW(static_cast<HINSTANCE>(instance),
+                                 MAKEINTRESOURCEW(IDI_APP_ICON));
+  window_class.hIconSm = LoadIconW(static_cast<HINSTANCE>(instance),
+                                   MAKEINTRESOURCEW(IDI_APP_ICON));
   window_class.lpszClassName = L"dhepz.app.window";
-  if (!RegisterClassW(&window_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+  if (!RegisterClassExW(&window_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
     return false;
   }
 
