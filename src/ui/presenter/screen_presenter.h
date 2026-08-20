@@ -37,7 +37,10 @@ class ScreenPresenter final {
 
   // VK_TAB / Shift+VK_TAB advance focus; returns true when handled.
   bool HandleKey(int virtual_key);
-  // Click-to-focus on an id'd focusable node; true when focus moved.
+  // Hover and press feedback; true when the visual state changed.
+  bool HandleMove(float x, float y);
+  bool HandleDown(float x, float y);
+  // Click-to-focus on a focusable node; true when focus moved.
   bool HandleClick(float x, float y);
 
   std::wstring focused() const { return focus_.Current(route_); }
@@ -45,7 +48,12 @@ class ScreenPresenter final {
  private:
   void PaintNode(const layout::LayoutNode& node);
   bool ClickNode(const layout::LayoutNode& node, float x, float y);
+  const config::ComponentNode* FindButton(const layout::LayoutNode& node, float x,
+                                          float y) const;
   render::Color Token(std::wstring_view name, render::Color fallback) const;
+  // The style a text node is measured AND painted with; keeping the two
+  // identical is what warms the painted font during layout.
+  static render::TextStyle StyleForText(const config::ComponentNode& node);
 
   render::RenderBackend* backend_;
   layout::LayoutEngine engine_;
@@ -53,6 +61,9 @@ class ScreenPresenter final {
   const config::ResolvedUiDocument* document_ = nullptr;
   const layout::LayoutNode* last_tree_ = nullptr;
   const layout::LayoutNode* backdrop_tree_ = nullptr;
+  const config::ComponentNode* focused_node_ = nullptr;
+  const config::ComponentNode* hover_node_ = nullptr;
+  const config::ComponentNode* pressed_node_ = nullptr;
   layout::PaintPlan plan_;
   std::wstring route_;
   std::wstring theme_;

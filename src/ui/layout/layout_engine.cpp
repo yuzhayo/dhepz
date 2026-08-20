@@ -40,19 +40,22 @@ bool IsContainerLike(const std::wstring& type) {
 }  // namespace
 
 render::Size LayoutEngine::MeasureText(const config::ComponentNode& node,
-                                       std::wstring_view text) {
+                                       std::wstring_view text,
+                                       const render::TextStyle* style) {
   for (const auto& [memo_node, size] : memo_) {
     if (memo_node == &node) return size;
   }
   ++measure_calls_;
-  render::TextStyle style;
-  const std::wstring variant = node.GetString(L"variant");
-  if (variant == L"monospace") {
-    style.family = L"Cascadia Mono";
-  }
-  const render::Size size = backend_->MeasureText(text, style, 0.0f);
+  const render::TextStyle fallback{};
+  const render::Size size =
+      backend_->MeasureText(text, style != nullptr ? *style : fallback, 0.0f);
   memo_.emplace_back(&node, size);
   return size;
+}
+
+void LayoutEngine::set_text_style_provider(
+    std::function<render::TextStyle(const config::ComponentNode&)> provider) {
+  text_style_provider_ = std::move(provider);
 }
 
 LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::Rect& available,
@@ -63,7 +66,9 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::
   const std::wstring& type = node.type();
 
   if (type == L"text") {
-    const render::Size size = MeasureText(node, node.GetString(L"text"));
+    const render::TextStyle style =
+        text_style_provider_ ? text_style_provider_(node) : render::TextStyle{};
+    const render::Size size = MeasureText(node, node.GetString(L"text"), &style);
     out.bounds.width = std::min(size.width, available.width);
     out.bounds.height = size.height;
     return out;

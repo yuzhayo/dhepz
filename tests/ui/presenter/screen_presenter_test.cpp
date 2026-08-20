@@ -32,8 +32,9 @@ class RecordingBackend final : public render::RenderBackend {
   void StrokeRect(const render::Rect&, render::Color, float) override {
     calls.push_back(L"ring");
   }
-  void FillRoundedRect(const render::Rect&, const render::CornerRadius&, render::Color) override {
+  void FillRoundedRect(const render::Rect& rect, const render::CornerRadius&, render::Color color) override {
     calls.push_back(L"button");
+    fills.push_back({rect, color});
   }
   void StrokeRoundedRect(const render::Rect&, const render::CornerRadius&, render::Color,
                          float) override {}
@@ -48,6 +49,7 @@ class RecordingBackend final : public render::RenderBackend {
   void PopTranslation() override {}
 
   std::vector<std::wstring> calls;
+  std::vector<std::pair<render::Rect, render::Color>> fills;
 };
 
 std::wstring W(const char* utf8) {
@@ -161,6 +163,37 @@ DHEPZ_TEST(ScreenPresenter, ClickFocusesTheHitButton) {
   // Button sits below the text row: container column, gap 8, text 20 high.
   DHEPZ_CHECK(presenter.HandleClick(50.0f, 40.0f));
   DHEPZ_CHECK_EQ(presenter.focused(), std::wstring(L"go"));
+}
+
+DHEPZ_TEST(ScreenPresenter, HoverBrightensAndPressBumpsTheButton) {
+  RecordingBackend backend;
+  ui::presenter::ScreenPresenter presenter(&backend);
+  const auto document = Resolve();
+  presenter.SetDocument(document.get());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+  DHEPZ_CHECK(!backend.fills.empty());
+  const render::Color base = backend.fills.back().second;
+  const float base_y = backend.fills.back().first.y;
+
+  // The button sits below the text row.
+  DHEPZ_CHECK(presenter.HandleMove(50.0f, 40.0f));
+  backend.fills.clear();
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+  DHEPZ_CHECK(backend.fills.back().second.r > base.r);  // brightened
+  DHEPZ_CHECK_EQ(backend.fills.back().first.y, base_y);
+
+  DHEPZ_CHECK(presenter.HandleDown(50.0f, 40.0f));
+  backend.fills.clear();
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+  DHEPZ_CHECK(backend.fills.back().second.r < base.r);  // darkened
+  DHEPZ_CHECK(backend.fills.back().first.y > base_y);   // bumped 1px
+
+  // Release clears the press.
+  presenter.HandleClick(50.0f, 40.0f);
+  backend.fills.clear();
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+  DHEPZ_CHECK_EQ(backend.fills.back().first.y, base_y);
 }
 
 DHEPZ_TEST(ScreenPresenter, RouteSwitchChangesTheDrawSet) {

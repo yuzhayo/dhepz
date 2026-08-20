@@ -109,6 +109,9 @@ class AppWindow final {
   void set_content_layout(std::function<void(const render::Rect&)> layout);
   void set_content_key_handler(std::function<bool(int virtual_key)> handler);
   void set_content_click_handler(std::function<bool(float x_logical, float y_logical)> handler);
+  // Hover and press feedback for content components; return true to repaint.
+  void set_content_move_handler(std::function<bool(float x_logical, float y_logical)> handler);
+  void set_content_down_handler(std::function<bool(float x_logical, float y_logical)> handler);
 
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
@@ -141,6 +144,8 @@ class AppWindow final {
   std::function<void(const render::Rect&)> content_layout_;
   std::function<bool(int)> content_key_handler_;
   std::function<bool(float, float)> content_click_handler_;
+  std::function<bool(float, float)> content_move_handler_;
+  std::function<bool(float, float)> content_down_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;
