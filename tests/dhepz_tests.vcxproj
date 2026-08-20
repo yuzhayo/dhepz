@@ -123,6 +123,7 @@
     <ClCompile Include="..\src\platform\**\*.cpp" />
     <ClCompile Include="..\src\render\**\*.cpp" />
     <ClCompile Include="..\src\ui\config\**\*.cpp" />
+    <ClCompile Include="..\src\ui\focus\**\*.cpp" />
     <ClCompile Include="..\src\ui\shell\**\*.cpp" />
     <ClCompile Include="..\src\ui\theme\**\*.cpp" />
     <ClInclude Include="**\*.h" />
