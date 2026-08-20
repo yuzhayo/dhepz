@@ -160,17 +160,24 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Left,
                             render::VerticalAlign::Top);
     } else if (type == L"button") {
+      // Tab-state model: idle shows only a gray outline; hover brightens the
+      // outline; press bumps; selected switches to the accent plus a tint.
       render::Rect box = node.bounds;
-      render::Color fill = Token(L"surfaceAlt", {35, 39, 48, 255});
-      if (source == pressed_node_) {
-        fill = Shade(fill, -14);
-        box.y += 1.0f;  // the bump
+      const bool selected = source->GetBool(L"selected");
+      render::Color outline = Token(L"borderStrong", {70, 76, 88, 255});
+      if (selected) {
+        outline = Token(L"accent", {96, 165, 250, 255});
+        render::Color tint = outline;
+        tint.a = 40;
+        backend_->FillRoundedRect(box, render::CornerRadius::Uniform(6.0f), tint);
       } else if (source == hover_node_) {
-        fill = Shade(fill, +14);
+        outline = Shade(outline, +40);
       }
-      backend_->FillRoundedRect(box, render::CornerRadius::Uniform(6.0f), fill);
-      backend_->StrokeRoundedRect(box, render::CornerRadius::Uniform(6.0f),
-                                  Token(L"border", {48, 53, 64, 255}), 1.0f);
+      if (source == pressed_node_) {
+        outline = Shade(outline, -20);
+        box.y += 1.0f;  // the bump
+      }
+      backend_->StrokeRoundedRect(box, render::CornerRadius::Uniform(6.0f), outline, 1.0f);
       backend_->DrawTextRun(source->GetString(L"label"), box, render::TextStyle{},
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Center,
                             render::VerticalAlign::Middle);

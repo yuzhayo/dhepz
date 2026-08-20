@@ -36,9 +36,13 @@ class RecordingBackend final : public render::RenderBackend {
     calls.push_back(L"button");
     fills.push_back({rect, color});
   }
-  void StrokeRoundedRect(const render::Rect&, const render::CornerRadius&, render::Color,
-                         float stroke_width) override {
-    if (stroke_width >= 2.0f) calls.push_back(L"ring");
+  void StrokeRoundedRect(const render::Rect& rect, const render::CornerRadius&,
+                         render::Color color, float stroke_width) override {
+    if (stroke_width >= 2.0f) {
+      calls.push_back(L"ring");
+    } else {
+      strokes.push_back({rect, color});
+    }
   }
   void DrawTextRun(std::wstring_view text, const render::Rect&, const render::TextStyle&,
                    render::Color, render::TextAlign, render::VerticalAlign) override {
@@ -52,6 +56,7 @@ class RecordingBackend final : public render::RenderBackend {
 
   std::vector<std::wstring> calls;
   std::vector<std::pair<render::Rect, render::Color>> fills;
+  std::vector<std::pair<render::Rect, render::Color>> strokes;
 };
 
 std::wstring W(const char* utf8) {
@@ -81,6 +86,7 @@ const char* kCore = R"({
     "text": { "properties": { "text": { "kind": "text", "required": true } } },
     "button": { "properties": {
       "label": { "kind": "text", "required": true },
+      "selected": { "kind": "binding" },
       "tab_stop": { "kind": "bool", "default": true } } }
   }
 })";
@@ -124,13 +130,11 @@ DHEPZ_TEST(ScreenPresenter, PaintsBackdropFirstThenContent) {
   DHEPZ_CHECK(!backend.calls.empty());
   DHEPZ_CHECK_EQ(backend.calls[0], std::wstring(L"fill"));  // backdrop window token
   bool saw_text = false;
-  bool saw_button = false;
   for (const auto& call : backend.calls) {
     if (call == L"text:hello") saw_text = true;
-    if (call == L"button") saw_button = true;
   }
   DHEPZ_CHECK(saw_text);
-  DHEPZ_CHECK(saw_button);
+  DHEPZ_CHECK(!backend.strokes.empty());  // the button outline
 }
 
 DHEPZ_TEST(ScreenPresenter, TabAdvancesFocusAndDrawsTheRing) {
@@ -167,35 +171,62 @@ DHEPZ_TEST(ScreenPresenter, ClickFocusesTheHitButton) {
   DHEPZ_CHECK_EQ(presenter.focused(), std::wstring(L"go"));
 }
 
-DHEPZ_TEST(ScreenPresenter, HoverBrightensAndPressBumpsTheButton) {
+DHEPZ_TEST(ScreenPresenter, IdleOutlineHoverBrightensPressBumps) {
   RecordingBackend backend;
   ui::presenter::ScreenPresenter presenter(&backend);
   const auto document = Resolve();
   presenter.SetDocument(document.get());
   presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
-  DHEPZ_CHECK(!backend.fills.empty());
-  const render::Color base = backend.fills.back().second;
-  const float base_y = backend.fills.back().first.y;
+  DHEPZ_CHECK(!backend.strokes.empty());
+  DHEPZ_CHECK(backend.fills.empty());  // idle: outline only, no fill
+  const render::Color base = backend.strokes.back().second;
+  const float base_y = backend.strokes.back().first.y;
 
   // The button sits below the text row.
   DHEPZ_CHECK(presenter.HandleMove(50.0f, 40.0f));
-  backend.fills.clear();
+  backend.strokes.clear();
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
-  DHEPZ_CHECK(backend.fills.back().second.r > base.r);  // brightened
-  DHEPZ_CHECK_EQ(backend.fills.back().first.y, base_y);
+  DHEPZ_CHECK(backend.strokes.back().second.r > base.r);  // brightened outline
+  DHEPZ_CHECK_EQ(backend.strokes.back().first.y, base_y);
 
   DHEPZ_CHECK(presenter.HandleDown(50.0f, 40.0f));
-  backend.fills.clear();
+  backend.strokes.clear();
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
-  DHEPZ_CHECK(backend.fills.back().second.r < base.r);  // darkened
-  DHEPZ_CHECK(backend.fills.back().first.y > base_y);   // bumped 1px
+  DHEPZ_CHECK(backend.strokes.back().first.y > base_y);  // bumped 1px
 
   // Release clears the press.
   presenter.HandleClick(50.0f, 40.0f);
-  backend.fills.clear();
+  backend.strokes.clear();
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
-  DHEPZ_CHECK_EQ(backend.fills.back().first.y, base_y);
+  DHEPZ_CHECK_EQ(backend.strokes.back().first.y, base_y);
+}
+
+DHEPZ_TEST(ScreenPresenter, SelectedButtonGetsAccentOutlineAndTint) {
+  RecordingBackend backend;
+  ui::presenter::ScreenPresenter presenter(&backend);
+  json::Value core;
+  DHEPZ_CHECK(json::Parse(W(kCore), &core).ok());
+  std::vector<ui::config::Diagnostic> diagnostics;
+  std::unique_ptr<ui::config::ResolvedUiDocument> document;
+  DHEPZ_CHECK(ui::config::ResolveDocument(
+                  core,
+                  {{L"embedded",
+                    W(R"({
+                      "components": [
+                        { "type": "screen", "route_id": "home", "children": [
+                          { "type": "button", "id": "lit", "label": "Lit",
+                            "selected": true }
+                        ] }
+                      ]
+                    })")}},
+                  &diagnostics, &document)
+                  .ok());
+  presenter.SetDocument(document.get());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+  DHEPZ_CHECK(!backend.fills.empty());  // the tint
+  DHEPZ_CHECK_EQ(static_cast<int>(backend.strokes.back().second.r), 0x60);  // accent outline
 }
 
 DHEPZ_TEST(ScreenPresenter, RouteSwitchChangesTheDrawSet) {

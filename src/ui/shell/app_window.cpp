@@ -355,16 +355,11 @@ void AppWindow::PaintContent() {
   backend_.FillRoundedRect(content, render::CornerRadius::Uniform(radius), kBackground);
   backend_.StrokeRoundedRect(content, render::CornerRadius::Uniform(radius), kBorder, 1.0f);
 
-  // Caption: title left, window buttons right.
+  // Caption: window buttons right. The title is not drawn inside the frame —
+  // it lives in the window title (taskbar/Alt-Tab); drawing it here stacked
+  // on top of content.
   const render::Rect caption{content.x, content.y, content.width, kCaptionHeight};
   const int count = ButtonCount();
-  const float buttons_width = kButtonWidth * count;
-  const float title_width = content.width - buttons_width - 28.0f;
-  if (title_width > 0.0f) {
-    backend_.DrawTextRun(title_, {caption.x + 14.0f, caption.y, title_width, caption.height},
-                         CaptionStyle(), kCaptionText, render::TextAlign::Left,
-                         render::VerticalAlign::Middle);
-  }
 
   const render::TextStyle glyph = GlyphStyle();
   const render::TextStyle icon = IconStyle();
