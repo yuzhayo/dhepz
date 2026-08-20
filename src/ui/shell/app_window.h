@@ -20,12 +20,19 @@
 // This header stays free of windows.h.
 #pragma once
 
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 
 #include "render/gdi_backend.h"
 
 namespace render {
 class GdiResourceCache;
+}
+
+namespace platform {
+class SignalFanout;
 }
 
 namespace shell {
@@ -68,6 +75,12 @@ class AppWindow final {
   // HTLEFT..., HTCLIENT, HTTRANSPARENT for the shadow margin).
   int HitTest(int x_px, int y_px) const;
 
+  // OS broadcast signals (theme, display, colours, settings) arrive in
+  // bursts; the fan-out coalesces each burst into one drain. The handler
+  // receives the drained bitmask; phases that care (themes) set one here.
+  void set_signal_handler(std::function<void(std::uint32_t)> handler);
+  std::uint32_t last_os_signals() const { return last_os_signals_; }
+
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
                                         unsigned long long wparam, long long lparam);
@@ -88,6 +101,10 @@ class AppWindow final {
   void* instance_ = nullptr;
   void* hwnd_ = nullptr;  // HWND
   render::GdiBackend backend_;
+  std::unique_ptr<platform::SignalFanout> signals_;
+  std::function<void(std::uint32_t)> signal_handler_;
+  std::uint32_t last_os_signals_ = 0;
+  unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;
   bool maximized_ = false;
   int restored_width_px_ = 0;
