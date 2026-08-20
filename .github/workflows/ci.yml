@@ -28,16 +28,17 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      # Needed only for the Velopack `vpk` packaging tool in Phase 6, but
-      # installed here so Test-Toolchain.ps1 can verify global.json resolves.
-      # An unresolvable pin is a build failure waiting for the first release.
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.304
+      - uses: microsoft/setup-msbuild@v3
 
-      - uses: microsoft/setup-msbuild@v2
+      # Deliberately no actions/setup-dotnet. Nothing in the build or test path
+      # invokes dotnet — the runner image already ships a 9.0.3xx SDK, and
+      # global.json's rollForward: latestPatch resolves to it. Installing a
+      # pinned SDK downloaded 298 MB and took 6 of the job's 6.5 minutes, then
+      # Test-Toolchain reported the preinstalled 9.0.316 anyway, so the download
+      # was entirely discarded. Velopack's vpk tool is the first real dotnet
+      # dependency; add setup-dotnet back in Phase 6 when packaging needs it.
 
       # Runs before the build so a toolchain mismatch is reported as itself
       # rather than as a confusing compile error 10 minutes later.
@@ -100,7 +101,7 @@ jobs:
           }
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
@@ -111,7 +112,7 @@ jobs:
       # Release build. This is not that: it is the build-tree binary, uploaded so
       # a reviewer can check size and hardening flags without a local toolchain.
       - name: Upload Release binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dhepz-release-x64
           path: build/x64/Release/dhepz.exe
