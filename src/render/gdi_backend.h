@@ -56,6 +56,12 @@ class GdiBackend final : public RenderBackend {
   void EndFrame() override;
   void Present(void* window_handle) override;
 
+  // RenderBackend — invalidation.
+  void Invalidate(const Rect& region) override;
+  void InvalidateAll() override;
+  bool HasInvalidation() const override;
+  bool TakeInvalidation(Rect& out) override;
+
   // RenderBackend — resources.
   ImageHandle LoadImageFile(std::wstring_view path) override;
   void ReleaseImage(ImageHandle image) override;

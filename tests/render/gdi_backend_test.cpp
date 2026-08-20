@@ -314,3 +314,109 @@ DHEPZ_TEST(GdiBackend, FullFrameFitsTheResizeBudgetInRelease) {
   DestroyWindow(window);
 }
 #endif
+
+DHEPZ_TEST(GdiBackend, InvalidationsCoalesceIntoOneUnion) {
+  render::GdiBackend backend;
+  backend.Resize({100.0f, 100.0f});
+  render::Rect drain{};
+  DHEPZ_CHECK(backend.TakeInvalidation(drain));  // fresh-buffer invalidation
+  DHEPZ_CHECK_FALSE(backend.HasInvalidation());
+
+  // Ten separate invalidations in one message-loop iteration...
+  for (int i = 0; i < 10; ++i) {
+    backend.Invalidate({static_cast<float>(i * 5), 10.0f, 4.0f, 4.0f});
+  }
+  DHEPZ_CHECK(backend.HasInvalidation());
+
+  // ...are taken as exactly one region: their bounding union.
+  render::Rect dirty{};
+  DHEPZ_CHECK(backend.TakeInvalidation(dirty));
+  DHEPZ_CHECK_EQ(dirty.x, 0.0f);
+  DHEPZ_CHECK_EQ(dirty.y, 10.0f);
+  DHEPZ_CHECK_EQ(dirty.right(), 49.0f);
+  DHEPZ_CHECK_EQ(dirty.bottom(), 14.0f);
+
+  // Take clears: nothing pending until the next invalidation.
+  DHEPZ_CHECK_FALSE(backend.HasInvalidation());
+  DHEPZ_CHECK_FALSE(backend.TakeInvalidation(dirty));
+}
+
+DHEPZ_TEST(GdiBackend, InvalidationIsClippedToTheSurface) {
+  render::GdiBackend backend;
+  backend.Resize({50.0f, 50.0f});
+  render::Rect drain{};
+  DHEPZ_CHECK(backend.TakeInvalidation(drain));  // fresh-buffer invalidation
+
+  backend.Invalidate({-20.0f, -20.0f, 40.0f, 40.0f});
+  render::Rect dirty{};
+  DHEPZ_CHECK(backend.TakeInvalidation(dirty));
+  DHEPZ_CHECK_EQ(dirty.x, 0.0f);
+  DHEPZ_CHECK_EQ(dirty.y, 0.0f);
+  DHEPZ_CHECK_EQ(dirty.right(), 20.0f);
+  DHEPZ_CHECK_EQ(dirty.bottom(), 20.0f);
+
+  // Fully outside the surface: nothing pending.
+  backend.Invalidate({60.0f, 60.0f, 10.0f, 10.0f});
+  DHEPZ_CHECK_FALSE(backend.HasInvalidation());
+}
+
+DHEPZ_TEST(GdiBackend, AResizedBufferInvalidatesEverything) {
+  render::GdiBackend backend;
+  backend.Resize({40.0f, 40.0f});
+  render::Rect dirty{};
+  DHEPZ_CHECK(backend.TakeInvalidation(dirty));
+  DHEPZ_CHECK_EQ(dirty.width, 40.0f);
+  DHEPZ_CHECK_EQ(dirty.height, 40.0f);
+
+  // Same size again: nothing new pending.
+  backend.Resize({40.0f, 40.0f});
+  DHEPZ_CHECK_FALSE(backend.HasInvalidation());
+
+  // A real resize marks the whole surface dirty again.
+  backend.Resize({60.0f, 30.0f});
+  DHEPZ_CHECK(backend.TakeInvalidation(dirty));
+  DHEPZ_CHECK_EQ(dirty.width, 60.0f);
+  DHEPZ_CHECK_EQ(dirty.height, 30.0f);
+}
+
+DHEPZ_TEST(GdiBackend, PaintTouchesOnlyTheDirtyRegion) {
+  render::GdiBackend backend;
+  backend.Resize({40.0f, 40.0f});
+
+  // First frame paints the base (the fresh buffer is fully invalidated).
+  render::Rect dirty{};
+  DHEPZ_CHECK(backend.TakeInvalidation(dirty));
+  backend.BeginFrame(dirty);
+  backend.FillRect({0.0f, 0.0f, 40.0f, 40.0f}, {0, 0, 255, 255});
+  backend.EndFrame();
+
+  // A caret-sized invalidation: the next frame is clipped to it, so a
+  // full-surface draw only changes those pixels.
+  backend.Invalidate({10.0f, 10.0f, 2.0f, 20.0f});
+  DHEPZ_CHECK(backend.TakeInvalidation(dirty));
+  DHEPZ_CHECK_EQ(dirty.width, 2.0f);
+  backend.BeginFrame(dirty);
+  backend.FillRect({0.0f, 0.0f, 40.0f, 40.0f}, {255, 0, 0, 255});
+  backend.EndFrame();
+
+  DHEPZ_CHECK_EQ(static_cast<unsigned long long>(backend.PixelAt(11, 15)),
+                 static_cast<unsigned long long>(Packed(255, 255, 0, 0)));  // dirty: red
+  DHEPZ_CHECK_EQ(static_cast<unsigned long long>(backend.PixelAt(5, 15)),
+                 static_cast<unsigned long long>(Packed(255, 0, 0, 255)));  // outside: blue
+  DHEPZ_CHECK_EQ(static_cast<unsigned long long>(backend.PixelAt(30, 30)),
+                 static_cast<unsigned long long>(Packed(255, 0, 0, 255)));  // outside: blue
+}
+
+DHEPZ_TEST(GdiBackend, InvalidationWhileIdleOnlyAccumulates) {
+  render::GdiBackend backend;
+  backend.Resize({20.0f, 20.0f});
+  render::Rect dirty{};
+  DHEPZ_CHECK(backend.TakeInvalidation(dirty));  // fresh-buffer invalidation
+
+  // With no frame run, invalidating changes nothing in the buffer and arms
+  // nothing: it merely accumulates until someone paints.
+  backend.Invalidate({0.0f, 0.0f, 5.0f, 5.0f});
+  DHEPZ_CHECK_EQ(static_cast<unsigned long long>(backend.PixelAt(2, 2)),
+                 static_cast<unsigned long long>(Packed(255, 0, 0, 0)));
+  DHEPZ_CHECK(backend.HasInvalidation());
+}

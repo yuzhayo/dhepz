@@ -37,6 +37,11 @@ class StubBackend final : public render::RenderBackend {
   void EndFrame() override { calls.push_back("end"); }
   void Present(void*) override { calls.push_back("present"); }
 
+  void Invalidate(const render::Rect&) override { calls.push_back("invalidate"); }
+  void InvalidateAll() override { calls.push_back("invalidate_all"); }
+  bool HasInvalidation() const override { return false; }
+  bool TakeInvalidation(render::Rect&) override { return false; }
+
   render::ImageHandle LoadImageFile(std::wstring_view) override {
     ++live_images;
     calls.push_back("load_image");
