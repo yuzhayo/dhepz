@@ -114,6 +114,7 @@ DHEPZ_TEST(ScreenPresenter, PaintsBackdropFirstThenContent) {
   const auto document = Resolve();
   presenter.SetDocument(document.get());
 
+  presenter.Prepare({24.0f, 24.0f, 400.0f, 300.0f});
   presenter.Paint({24.0f, 24.0f, 400.0f, 300.0f});
 
   DHEPZ_CHECK(!backend.calls.empty());
@@ -133,12 +134,14 @@ DHEPZ_TEST(ScreenPresenter, TabAdvancesFocusAndDrawsTheRing) {
   ui::presenter::ScreenPresenter presenter(&backend);
   const auto document = Resolve();
   presenter.SetDocument(document.get());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
 
   DHEPZ_CHECK(presenter.HandleKey(0x09));  // VK_TAB
   DHEPZ_CHECK_EQ(presenter.focused(), std::wstring(L"go"));
 
   backend.calls.clear();
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
   bool saw_ring = false;
   for (const auto& call : backend.calls) {
@@ -152,6 +155,7 @@ DHEPZ_TEST(ScreenPresenter, ClickFocusesTheHitButton) {
   ui::presenter::ScreenPresenter presenter(&backend);
   const auto document = Resolve();
   presenter.SetDocument(document.get());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
 
   // Button sits below the text row: container column, gap 8, text 20 high.
@@ -167,6 +171,7 @@ DHEPZ_TEST(ScreenPresenter, RouteSwitchChangesTheDrawSet) {
 
   presenter.SwitchRoute(L"other");
   DHEPZ_CHECK_EQ(presenter.current_route(), std::wstring(L"other"));
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
   presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
   bool saw_second = false;
   for (const auto& call : backend.calls) {

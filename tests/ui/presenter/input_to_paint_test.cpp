@@ -89,6 +89,8 @@ DHEPZ_TEST(GatePhase2, InputToPaintWithinBudget) {
   window.set_content_painter([](render::GdiBackend&, const render::Rect& content) {
     presenter.Paint(content);
   });
+  window.set_content_layout(
+      [](const render::Rect& content) { presenter.Prepare(content); });
   window.set_content_key_handler([](int vk) { return presenter.HandleKey(vk); });
   window.Show();
   PumpFor(50);

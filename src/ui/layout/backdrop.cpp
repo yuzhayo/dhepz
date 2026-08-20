@@ -27,6 +27,10 @@ PaintPlan MakePaintPlan(const config::ResolvedUiDocument& document, std::wstring
   return plan;
 }
 
+void PaintBackdropTree(render::RenderBackend* backend, const LayoutNode& tree) {
+  PaintTree(backend, tree);
+}
+
 void PaintBackdrop(render::RenderBackend* backend, LayoutEngine* engine,
                    const config::ResolvedUiDocument& document, std::wstring_view route,
                    render::Size size, std::wstring_view theme, const ListModel* model) {

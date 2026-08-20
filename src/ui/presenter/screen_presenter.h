@@ -13,6 +13,7 @@
 #include "render/render_backend.h"
 #include "ui/config/resolved_ui_document.h"
 #include "ui/focus/focus_coordinator.h"
+#include "ui/layout/backdrop.h"
 #include "ui/layout/layout_engine.h"
 
 namespace ui::presenter {
@@ -28,7 +29,10 @@ class ScreenPresenter final {
   const std::wstring& current_route() const { return route_; }
   void SwitchRoute(std::wstring_view route);
 
-  // Frame-scope paint of backdrop + layout tree + focus ring.
+  // Measurement pass: layout the route (and a screen backdrop) OUTSIDE the
+  // paint scope. The shell calls this before BeginFrame.
+  void Prepare(const render::Rect& content);
+  // Draw pass: paints the cached trees inside the frame scope.
   void Paint(const render::Rect& content);
 
   // VK_TAB / Shift+VK_TAB advance focus; returns true when handled.
@@ -48,6 +52,8 @@ class ScreenPresenter final {
   focus::FocusCoordinator focus_;
   const config::ResolvedUiDocument* document_ = nullptr;
   const layout::LayoutNode* last_tree_ = nullptr;
+  const layout::LayoutNode* backdrop_tree_ = nullptr;
+  layout::PaintPlan plan_;
   std::wstring route_;
   std::wstring theme_;
 };
