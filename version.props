@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single source of version truth. Consumed by cl (preprocessor defines),
+     rc (VERSIONINFO), the manifest, and the release workflow's version bump.
+     Nothing else may hardcode a version number. -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <DhepzVersion>0.1.0</DhepzVersion>
+    <DhepzVersionMajor>0</DhepzVersionMajor>
+    <DhepzVersionMinor>1</DhepzVersionMinor>
+    <DhepzVersionPatch>0</DhepzVersionPatch>
+    <DhepzVersionBuild>0</DhepzVersionBuild>
+  </PropertyGroup>
+</Project>

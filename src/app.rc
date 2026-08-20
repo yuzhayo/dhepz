@@ -1,0 +1,46 @@
+#include <windows.h>
+
+#include "resource.h"
+#include "dhepz_version_generated.h"
+
+// The icon and the embedded UI JSON are added in later phases (see issue #24).
+// VERSIONINFO is here from the start so the installed binary is identifiable
+// and the release workflow's version bump has something to move.
+//
+// NOTE: this file must stay LF-only. It will embed UI JSON verbatim via RCDATA,
+// and CRLF corrupts it.
+
+1 VERSIONINFO
+ FILEVERSION DHEPZ_VERSION_COMMA
+ PRODUCTVERSION DHEPZ_VERSION_COMMA
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Yuzha\0"
+            VALUE "FileDescription", "dhepz\0"
+            /* No adjacent "\0" on these two: rc does not concatenate a
+               macro-expanded string with a following literal, and doing so
+               silently yields an empty value. rc null-terminates anyway. */
+            VALUE "FileVersion", DHEPZ_FILE_VERSION_STRING
+            VALUE "InternalName", "dhepz\0"
+            VALUE "OriginalFilename", "dhepz.exe\0"
+            VALUE "ProductName", "dhepz\0"
+            VALUE "ProductVersion", DHEPZ_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

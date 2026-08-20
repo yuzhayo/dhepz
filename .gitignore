@@ -1,20 +1,35 @@
+# Plan and working notes: single live local copy, deliberately untracked.
 .docs
 
+# MSBuild / Visual Studio outputs
+build/
+.vs/
+*.user
+*.suo
+*.aps
+*.lastbuildstate
+*.tlog
+*.obj
+*.res
+*.pdb
+*.ipdb
+*.iobj
+*.idb
+*.ilk
+*.exp
+*.lib
 
+# Release artifacts are attached to a release, never committed.
+dist/
+artifacts/
+*.exe
+*.dll
+*.msi
+*.nupkg
+RELEASES
+SHA256SUMS
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# Local measurement output (issue #13)
+*.etl
+*.csv
+*.log

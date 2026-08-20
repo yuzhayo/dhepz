@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{3C7E9B41-5D82-4A6F-9E13-7B4A2F8C6D50}</ProjectGuid>
+    <RootNamespace>dhepz</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(ProjectDir)..\version.props" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
+    <!-- LTCG. Part of why an installed native EXE can hit the cold-start budget. -->
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)build\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+    <GeneratedDir>$(SolutionDir)build\generated\</GeneratedDir>
+    <TargetName>dhepz</TargetName>
+  </PropertyGroup>
+
+  <!-- Version strings reach both cl and rc through a generated header rather
+       than through /D. MSBuild's ResourceCompile task mangles quotes inside
+       PreprocessorDefinitions, and rc's preprocessor has no stringize
+       operator, so a quoted string define cannot survive to rc intact. The
+       header keeps version.props the single source of truth for both
+       compilers with one mechanism instead of two.
+       WriteOnlyWhenDifferent keeps this from dirtying every build. -->
+  <Target Name="GenerateVersionHeader"
+          BeforeTargets="PrepareForBuild;ResourceCompile;ClCompile"
+          Inputs="$(ProjectDir)..\version.props"
+          Outputs="$(GeneratedDir)dhepz_version_generated.h">
+    <MakeDir Directories="$(GeneratedDir)" />
+    <WriteLinesToFile File="$(GeneratedDir)dhepz_version_generated.h"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true"
+                      Lines="// Generated from version.props by the GenerateVersionHeader target.;// Do not edit and do not commit.;#pragma once;#define DHEPZ_VERSION_STRING &quot;$(DhepzVersion)&quot;;#define DHEPZ_VERSION_STRING_W L&quot;$(DhepzVersion)&quot;;#define DHEPZ_FILE_VERSION_STRING &quot;$(DhepzVersion).$(DhepzVersionBuild)&quot;" />
+  </Target>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <ConformanceMode>true</ConformanceMode>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <SDLCheck>true</SDLCheck>
+      <!-- version.props is single-sourced into cl here and into rc below.
+           Nothing else may hardcode a version. -->
+      <PreprocessorDefinitions>
+        UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;WINVER=0x0A00;_WIN32_WINNT=0x0A00;DHEPZ_VERSION_MAJOR=$(DhepzVersionMajor);DHEPZ_VERSION_MINOR=$(DhepzVersionMinor);DHEPZ_VERSION_PATCH=$(DhepzVersionPatch);DHEPZ_VERSION_BUILD=$(DhepzVersionBuild);%(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(GeneratedDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:preprocessor /Zc:inline %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <!-- Windows subsystem: no console window flash on launch. -->
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <HighEntropyVA>true</HighEntropyVA>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <!-- /CETCOMPAT and HighEntropyVA are the two most commonly forgotten
+           hardening flags; both are set deliberately. -->
+      <AdditionalOptions>/CETCOMPAT %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;shlwapi.lib;advapi32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <Manifest>
+      <AdditionalManifestFiles>$(ProjectDir)app.manifest</AdditionalManifestFiles>
+    </Manifest>
+    <ResourceCompile>
+      <!-- Only the numeric and comma forms are safe to pass as defines. The
+           quoted string forms come from the generated header below: MSBuild's
+           ResourceCompile task mangles embedded quotes, and rc's preprocessor
+           has no stringize operator, so there is no in-place escape that
+           survives. -->
+      <PreprocessorDefinitions>
+        DHEPZ_VERSION_MAJOR=$(DhepzVersionMajor);DHEPZ_VERSION_MINOR=$(DhepzVersionMinor);DHEPZ_VERSION_PATCH=$(DhepzVersionPatch);DHEPZ_VERSION_BUILD=$(DhepzVersionBuild);DHEPZ_VERSION_COMMA=$(DhepzVersionMajor),$(DhepzVersionMinor),$(DhepzVersionPatch),$(DhepzVersionBuild);%(PreprocessorDefinitions)
+      </PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(GeneratedDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <!-- Static CRT: no VC++ redistributable to locate at startup, and the
+           installed EXE has no runtime dependency to bootstrap. -->
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- G5: wildcard globs, not an explicit file list. Dropping a module folder
+       under src/modules/ makes it compile on the next build with no project
+       edit. Never replace these with explicit <ClCompile Include> entries.
+       Modules compile directly into the EXE, never into a static .lib: the
+       linker discards unreferenced objects from a .lib and would silently
+       drop static self-registration. -->
+  <ItemGroup>
+    <ClCompile Include="**\*.cpp" />
+    <ClInclude Include="**\*.h" />
+    <None Include="app.manifest" />
+    <ResourceCompile Include="app.rc" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
