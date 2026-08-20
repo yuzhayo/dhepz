@@ -64,6 +64,15 @@ const config::ComponentNode* FocusCoordinator::NodeFor(std::wstring_view route,
   return entry != state->order.end() ? entry->second : nullptr;
 }
 
+std::wstring FocusCoordinator::IdFor(std::wstring_view route,
+                                     const config::ComponentNode* node) const {
+  const RouteState* state = Find(route);
+  if (state == nullptr || node == nullptr) return {};
+  const auto entry = std::find_if(state->order.begin(), state->order.end(),
+                                  [node](const auto& pair) { return pair.second == node; });
+  return entry != state->order.end() ? entry->first : std::wstring{};
+}
+
 std::wstring FocusCoordinator::Current(std::wstring_view route) const {
   const RouteState* state = Find(route);
   return state != nullptr ? state->current : std::wstring{};

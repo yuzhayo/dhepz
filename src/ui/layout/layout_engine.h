@@ -14,6 +14,7 @@
 // out as column until then.
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -60,14 +61,22 @@ class LayoutEngine final {
   // Test seam: how many times the seam's MeasureText ran.
   int measure_calls() const { return measure_calls_; }
 
+  // The style used to measure a text node. Presenters set this to the style
+  // they will paint with, so measurement warms exactly the font the paint
+  // pass needs (font creation inside a frame is refused by the backend).
+  void set_text_style_provider(
+      std::function<render::TextStyle(const config::ComponentNode&)> provider);
+
  private:
   LayoutNode Build(const config::ComponentNode& node, const render::Rect& available,
                    const ListModel* model);
-  render::Size MeasureText(const config::ComponentNode& node, std::wstring_view text);
+  render::Size MeasureText(const config::ComponentNode& node, std::wstring_view text,
+                           const render::TextStyle* style = nullptr);
 
   render::RenderBackend* backend_;
   int measure_calls_ = 0;
   float scroll_offset_ = 0.0f;
+  std::function<render::TextStyle(const config::ComponentNode&)> text_style_provider_;
 
   const void* memo_document_ = nullptr;
   std::vector<std::pair<const config::ComponentNode*, render::Size>> memo_;

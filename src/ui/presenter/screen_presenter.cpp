@@ -7,7 +7,23 @@
 namespace ui::presenter {
 
 ScreenPresenter::ScreenPresenter(render::RenderBackend* backend, std::wstring theme)
-    : backend_(backend), engine_(backend), theme_(std::move(theme)) {}
+    : backend_(backend), engine_(backend), theme_(std::move(theme)) {
+  engine_.set_text_style_provider(&ScreenPresenter::StyleForText);
+}
+
+render::TextStyle ScreenPresenter::StyleForText(const config::ComponentNode& node) {
+  render::TextStyle style;
+  const std::wstring variant = node.GetString(L"variant");
+  if (variant == L"title") {
+    style.size_px = 20.0f;
+    style.weight = render::FontWeight::Semibold;
+  } else if (variant == L"caption") {
+    style.size_px = 12.0f;
+  } else if (variant == L"monospace") {
+    style.family = L"Cascadia Mono";
+  }
+  return style;
+}
 
 void ScreenPresenter::SetDocument(const config::ResolvedUiDocument* document) {
   document_ = document;
@@ -50,6 +66,7 @@ void ScreenPresenter::Prepare(const render::Rect& content) {
 void ScreenPresenter::Paint(const render::Rect& content) {
   if (document_ == nullptr || last_tree_ == nullptr) return;
 
+  focused_node_ = focus_.NodeFor(route_, focus_.Current(route_));
   backend_->PushTranslation({content.x, content.y});
   switch (plan_.kind) {
     case config::Route::BackdropKind::Color: {
@@ -85,43 +102,80 @@ bool ScreenPresenter::ClickNode(const layout::LayoutNode& node, float x, float y
     if (ClickNode(child, x, y)) return true;
   }
   const config::ComponentNode* source = node.source;
-  if (source == nullptr || source->id().empty()) return false;
+  if (source == nullptr) return false;
   if (!node.bounds.contains({x, y})) return false;
   if (!(source->GetBool(L"tab_stop") && source->GetBool(L"visible", true) &&
         source->GetBool(L"enabled", true))) {
     return false;
   }
-  return focus_.SetFocus(route_, source->id());
+  const std::wstring id = focus_.IdFor(route_, source);
+  if (id.empty()) return false;
+  return focus_.SetFocus(route_, id);
 }
+
+const config::ComponentNode* ScreenPresenter::FindButton(const layout::LayoutNode& node,
+                                                         float x, float y) const {
+  for (const layout::LayoutNode& child : node.children) {
+    if (const config::ComponentNode* hit = FindButton(child, x, y)) return hit;
+  }
+  if (node.source != nullptr && node.source->type() == L"button" &&
+      node.bounds.contains({x, y})) {
+    return node.source;
+  }
+  return nullptr;
+}
+
+bool ScreenPresenter::HandleMove(float x, float y) {
+  const config::ComponentNode* hit =
+      last_tree_ != nullptr ? FindButton(*last_tree_, x, y) : nullptr;
+  if (hit == hover_node_) return false;
+  hover_node_ = hit;
+  return true;
+}
+
+bool ScreenPresenter::HandleDown(float x, float y) {
+  const config::ComponentNode* hit =
+      last_tree_ != nullptr ? FindButton(*last_tree_, x, y) : nullptr;
+  const bool changed = hit != pressed_node_;
+  pressed_node_ = hit;
+  return changed;
+}
+
+namespace {
+render::Color Shade(render::Color color, int delta) {
+  auto clamp = [](int value) {
+    return static_cast<unsigned char>(value < 0 ? 0 : (value > 255 ? 255 : value));
+  };
+  return render::Color{clamp(color.r + delta), clamp(color.g + delta),
+                       clamp(color.b + delta), color.a};
+}
+}  // namespace
 
 void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
   const config::ComponentNode* source = node.source;
   if (source != nullptr) {
     const std::wstring& type = source->type();
     if (type == L"text") {
-      render::TextStyle style;
-      const std::wstring variant = source->GetString(L"variant");
-      if (variant == L"title") {
-        style.size_px = 20.0f;
-        style.weight = render::FontWeight::Semibold;
-      } else if (variant == L"caption") {
-        style.size_px = 12.0f;
-      } else if (variant == L"monospace") {
-        style.family = L"Cascadia Mono";
-      }
-      backend_->DrawTextRun(source->GetString(L"text"), node.bounds, style,
+      backend_->DrawTextRun(source->GetString(L"text"), node.bounds, StyleForText(*source),
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Left,
                             render::VerticalAlign::Top);
     } else if (type == L"button") {
-      backend_->FillRoundedRect(node.bounds, render::CornerRadius::Uniform(6.0f),
-                                Token(L"surfaceAlt", {35, 39, 48, 255}));
-      backend_->StrokeRoundedRect(node.bounds, render::CornerRadius::Uniform(6.0f),
+      render::Rect box = node.bounds;
+      render::Color fill = Token(L"surfaceAlt", {35, 39, 48, 255});
+      if (source == pressed_node_) {
+        fill = Shade(fill, -14);
+        box.y += 1.0f;  // the bump
+      } else if (source == hover_node_) {
+        fill = Shade(fill, +14);
+      }
+      backend_->FillRoundedRect(box, render::CornerRadius::Uniform(6.0f), fill);
+      backend_->StrokeRoundedRect(box, render::CornerRadius::Uniform(6.0f),
                                   Token(L"border", {48, 53, 64, 255}), 1.0f);
-      backend_->DrawTextRun(source->GetString(L"label"), node.bounds, render::TextStyle{},
+      backend_->DrawTextRun(source->GetString(L"label"), box, render::TextStyle{},
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Center,
                             render::VerticalAlign::Middle);
     }
-    if (!source->id().empty() && source->id() == focus_.Current(route_)) {
+    if (source == focused_node_) {
       const render::Rect ring{node.bounds.x - 2.0f, node.bounds.y - 2.0f,
                               node.bounds.width + 4.0f, node.bounds.height + 4.0f};
       backend_->StrokeRect(ring, Token(L"accent", {96, 165, 250, 255}), 2.0f);
@@ -140,6 +194,7 @@ bool ScreenPresenter::HandleKey(int virtual_key) {
 
 bool ScreenPresenter::HandleClick(float x, float y) {
   if (last_tree_ == nullptr) return false;
+  pressed_node_ = nullptr;
   return ClickNode(*last_tree_, x, y);
 }
 

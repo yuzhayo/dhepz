@@ -149,6 +149,14 @@ void AppWindow::set_content_click_handler(std::function<bool(float, float)> hand
   content_click_handler_ = std::move(handler);
 }
 
+void AppWindow::set_content_move_handler(std::function<bool(float, float)> handler) {
+  content_move_handler_ = std::move(handler);
+}
+
+void AppWindow::set_content_down_handler(std::function<bool(float, float)> handler) {
+  content_down_handler_ = std::move(handler);
+}
+
 int AppWindow::ButtonCount() const {
   // Left-to-right: pin, [settings], min, max/restore, close. The gear only
   // exists while something can open — no dead button.
@@ -501,6 +509,14 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
           RenderFullFrame();
         }
       }
+      if (button < 0 && content_move_handler_) {
+        const int margin = maximized_ ? 0 : Px(kShadowMargin);
+        if (content_move_handler_(Logical(GET_X_LPARAM(lparam) - margin),
+                                  Logical(GET_Y_LPARAM(lparam) - margin)) &&
+            visible()) {
+          RenderFullFrame();
+        }
+      }
       TRACKMOUSEEVENT tracking{};
       tracking.cbSize = sizeof(tracking);
       tracking.dwFlags = TME_LEAVE;
@@ -515,7 +531,22 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
           RenderFullFrame();
         }
       }
+      if (content_move_handler_ && content_move_handler_(-1.0f, -1.0f) && visible()) {
+        RenderFullFrame();
+      }
       return 0;
+    case WM_LBUTTONDOWN: {
+      const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+      if (button < 0 && content_down_handler_) {
+        const int margin = maximized_ ? 0 : Px(kShadowMargin);
+        if (content_down_handler_(Logical(GET_X_LPARAM(lparam) - margin),
+                                  Logical(GET_Y_LPARAM(lparam) - margin)) &&
+            visible()) {
+          RenderFullFrame();
+        }
+      }
+      return 0;
+    }
     case WM_LBUTTONUP: {
       const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
       if (button < 0) {
