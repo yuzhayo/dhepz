@@ -60,6 +60,14 @@ jobs:
         shell: pwsh
         run: ./tools/Test.ps1 -JUnitPath artifacts/test-results/results.xml
 
+      # The embedded UI set must resolve cleanly on every commit. A malformed
+      # screen committed to the repo fails the job here with file(line,column)
+      # diagnostics; -SelfTest proves the gate by feeding a deliberately broken
+      # screen from a temp dir and demanding a line-numbered rejection.
+      - name: Validate UI config
+        shell: pwsh
+        run: ./tools/Merge-UiConfig.ps1 -Configuration Release -SelfTest
+
       # Emits GitHub annotations from the JUnit report directly, rather than via
       # a third-party reporter action. dorny/test-reporter's java-junit parser
       # ignores the `file`/`line` attributes on <testcase> and annotates the XML
