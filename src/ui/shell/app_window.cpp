@@ -45,6 +45,25 @@ render::TextStyle GlyphStyle() {
   return style;
 }
 
+// Verified by rendering the font on the target machine; the pair is the
+// user's visual choice: unpinned is the horizontal pin outline (E718),
+// pinned the diagonal pushpin (E840). E713 is the settings gear.
+constexpr wchar_t kPinGlyphUnpinned = 0xE718;  // horizontal pin outline
+constexpr wchar_t kPinGlyphPinned = 0xE840;    // diagonal pushpin
+constexpr wchar_t kGearGlyph = 0xE713;         // Settings
+
+render::TextStyle IconStyle() {
+  render::TextStyle style;
+  style.family = L"Segoe MDL2 Assets";
+  style.size_px = 14.0f;
+  return style;
+}
+
+// Marlett and Segoe MDL2 Assets centre their glyphs differently; the nudges
+// put both families on one visual row (verified against a rendered strip).
+constexpr float kIconNudgeY = 2.0f;
+constexpr float kMarlettNudgeY = -2.0f;
+
 }  // namespace
 
 AppWindow::AppWindow(render::GdiResourceCache* shared_cache) : backend_(shared_cache) {}
@@ -100,6 +119,19 @@ void AppWindow::set_settle_handler(std::function<void()> handler) {
   settle_handler_ = std::move(handler);
 }
 
+void AppWindow::set_settings_handler(std::function<void()> handler) {
+  settings_handler_ = std::move(handler);
+  if (visible()) {
+    RenderFullFrame();  // the button row gained or lost the gear
+  }
+}
+
+int AppWindow::ButtonCount() const {
+  // Left-to-right: pin, [settings], min, max/restore, close. The gear only
+  // exists while something can open — no dead button.
+  return settings_handler_ ? 5 : 4;
+}
+
 void AppWindow::Show() {
   const HWND window = static_cast<HWND>(hwnd_);
   if (window == nullptr || IsWindowVisible(window)) return;
@@ -124,6 +156,16 @@ void AppWindow::Close() {
   // Resident semantics: closing the window returns to the tray, it does not
   // exit the process. Exit belongs to the tray menu.
   Hide();
+}
+
+void AppWindow::TogglePin() {
+  if (hwnd_ == nullptr) return;
+  pinned_ = !pinned_;
+  SetWindowPos(static_cast<HWND>(hwnd_), pinned_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  if (visible()) {
+    RenderFullFrame();  // the glyph state changed
+  }
 }
 
 void AppWindow::Destroy() {
@@ -176,8 +218,9 @@ int AppWindow::ButtonAt(int x_px, int y_px) const {
   }
   const int from_right = content_right - x_px;
   if (from_right < 0) return -1;
-  const int index = 2 - from_right / button_width;  // 0 min, 1 max, 2 close
-  if (index < 0 || index > 2) return -1;
+  const int count = ButtonCount();
+  const int index = (count - 1) - from_right / button_width;  // left-to-right
+  if (index < 0 || index >= count) return -1;
   return index;
 }
 
@@ -227,8 +270,14 @@ void AppWindow::RenderFullFrame() {
   // refused by design.
   const render::TextStyle caption = CaptionStyle();
   const render::TextStyle glyph = GlyphStyle();
+  const render::TextStyle icon = IconStyle();
   backend_.MeasureText(title_, caption, 0.0f);
   backend_.MeasureText(L"0", glyph, 0.0f);
+  backend_.MeasureText(std::wstring(1, kPinGlyphUnpinned), icon, 0.0f);
+  backend_.MeasureText(std::wstring(1, kPinGlyphPinned), icon, 0.0f);
+  if (settings_handler_) {
+    backend_.MeasureText(std::wstring(1, kGearGlyph), icon, 0.0f);
+  }
 
   render::Rect dirty{};
   if (!backend_.TakeInvalidation(dirty)) {
@@ -271,20 +320,45 @@ void AppWindow::PaintContent() {
 
   // Caption: title left, window buttons right.
   const render::Rect caption{content.x, content.y, content.width, kCaptionHeight};
-  backend_.DrawTextRun(title_, {caption.x + 14.0f, caption.y, 320.0f, caption.height},
-                       CaptionStyle(), kCaptionText, render::TextAlign::Left,
-                       render::VerticalAlign::Middle);
+  const int count = ButtonCount();
+  const float buttons_width = kButtonWidth * count;
+  const float title_width = content.width - buttons_width - 28.0f;
+  if (title_width > 0.0f) {
+    backend_.DrawTextRun(title_, {caption.x + 14.0f, caption.y, title_width, caption.height},
+                         CaptionStyle(), kCaptionText, render::TextAlign::Left,
+                         render::VerticalAlign::Middle);
+  }
 
   const render::TextStyle glyph = GlyphStyle();
-  const wchar_t* glyphs[3] = {L"0", maximized_ ? L"2" : L"1", L"r"};
-  for (int i = 0; i < 3; ++i) {
-    const render::Rect button{caption.right() - (3 - i) * kButtonWidth, caption.y, kButtonWidth,
-                              kCaptionHeight};
+  const render::TextStyle icon = IconStyle();
+  const wchar_t* marlett[3] = {L"0", maximized_ ? L"2" : L"1", L"r"};  // min, max, close
+  for (int i = 0; i < count; ++i) {
+    // Role by distance from the right edge: 0 close, 1 max, 2 min, then the
+    // left slots: settings (only with a handler) and pin leftmost.
+    const int role = (count - 1) - i;
+    const bool is_pin = role == 4 || (role == 3 && !settings_handler_);
+    const bool is_gear = role == 3 && settings_handler_;
+    const render::Rect button{caption.right() - (count - i) * kButtonWidth, caption.y,
+                              kButtonWidth, kCaptionHeight};
     if (hover_button_ == i) {
-      backend_.FillRect(button, i == 2 ? kHoverClose : kHoverNeutral);
+      backend_.FillRect(button, role == 0 ? kHoverClose : kHoverNeutral);
     }
-    backend_.DrawTextRun(glyphs[i], button, glyph, kCaptionText, render::TextAlign::Center,
-                         render::VerticalAlign::Middle);
+    if (is_pin) {
+      backend_.DrawTextRun(std::wstring(1, pinned_ ? kPinGlyphPinned : kPinGlyphUnpinned),
+                           {button.x, button.y + kIconNudgeY, button.width, button.height}, icon,
+                           kCaptionText, render::TextAlign::Center,
+                           render::VerticalAlign::Middle);
+    } else if (is_gear) {
+      backend_.DrawTextRun(std::wstring(1, kGearGlyph),
+                           {button.x, button.y + kIconNudgeY, button.width, button.height}, icon,
+                           kCaptionText, render::TextAlign::Center,
+                           render::VerticalAlign::Middle);
+    } else {
+      backend_.DrawTextRun(marlett[2 - role],
+                           {button.x, button.y + kMarlettNudgeY, button.width, button.height},
+                           glyph, kCaptionText, render::TextAlign::Center,
+                           render::VerticalAlign::Middle);
+    }
   }
 }
 
@@ -411,12 +485,19 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       return 0;
     case WM_LBUTTONUP: {
       const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
-      if (button == 0) {
-        ShowWindow(window, SW_MINIMIZE);
-      } else if (button == 1) {
-        SetMaximized(!maximized_);
-      } else if (button == 2) {
+      if (button < 0) return 0;
+      const int role = (ButtonCount() - 1) - button;  // 0 close … leftmost pin
+      const bool is_pin = role == 4 || (role == 3 && !settings_handler_);
+      if (role == 0) {
         Close();
+      } else if (role == 1) {
+        SetMaximized(!maximized_);
+      } else if (role == 2) {
+        ShowWindow(window, SW_MINIMIZE);
+      } else if (is_pin) {
+        TogglePin();
+      } else if (role == 3 && settings_handler_) {
+        settings_handler_();
       }
       return 0;
     }

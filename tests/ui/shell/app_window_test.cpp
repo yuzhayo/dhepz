@@ -204,3 +204,119 @@ DHEPZ_TEST(AppWindow, WarmShowFitsTheBudget) {
   DHEPZ_CHECK(ms < 2000.0);
 #endif
 }
+
+namespace {
+
+// Z-order rank from the top of the desktop: lower means closer to the front.
+// Topmost windows walk before non-topmost ones, which is exactly what the
+// pin must buy.
+int ZRank(HWND target) {
+  int rank = 0;
+  for (HWND w = GetTopWindow(nullptr); w != nullptr; w = GetWindow(w, GW_HWNDNEXT)) {
+    if (w == target) return rank;
+    ++rank;
+  }
+  return -1;
+}
+
+HWND MakePlainPopup() {
+  WNDCLASSW wc{};
+  wc.lpfnWndProc = DefWindowProcW;
+  wc.hInstance = GetModuleHandleW(nullptr);
+  wc.lpszClassName = L"dhepz.test.pin.peer";
+  RegisterClassW(&wc);  // already-exists is fine
+  const HWND window = CreateWindowExW(0, wc.lpszClassName, L"peer", WS_POPUP, 0, 0, 120, 90,
+                                      nullptr, nullptr, wc.hInstance, nullptr);
+  ShowWindow(window, SW_SHOW);
+  return window;
+}
+
+}  // namespace
+
+DHEPZ_TEST(AppWindow, PinTogglesTopmostAndSurvivesHideShow) {
+  shell::AppWindow window;
+  DHEPZ_CHECK(window.Create(TestInstance(), 320.0f, 240.0f));
+  window.Show();
+  PumpFor(30);
+  DHEPZ_CHECK_FALSE(window.pinned());
+
+  const HWND peer = MakePlainPopup();
+  SetWindowPos(peer, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+  PumpFor(30);
+
+  window.TogglePin();
+  PumpFor(30);
+  DHEPZ_CHECK(window.pinned());
+  DHEPZ_CHECK(ZRank(static_cast<HWND>(window.hwnd())) >= 0);
+  DHEPZ_CHECK(ZRank(peer) >= 0);
+  DHEPZ_CHECK(ZRank(static_cast<HWND>(window.hwnd())) < ZRank(peer));
+
+  // Hide and restore: the pin state and the topmost band both survive.
+  window.Hide();
+  PumpFor(30);
+  window.Show();
+  PumpFor(30);
+  DHEPZ_CHECK(window.pinned());
+  DHEPZ_CHECK(ZRank(static_cast<HWND>(window.hwnd())) < ZRank(peer));
+
+  // Unpin: the peer, raised to the top, comes back in front.
+  window.TogglePin();
+  PumpFor(30);
+  DHEPZ_CHECK_FALSE(window.pinned());
+  SetWindowPos(peer, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+  PumpFor(30);
+  DHEPZ_CHECK(ZRank(peer) < ZRank(static_cast<HWND>(window.hwnd())));
+
+  DestroyWindow(peer);
+}
+
+DHEPZ_TEST(AppWindow, PinTogglesDoNotGrowHandles) {
+  shell::AppWindow window;
+  DHEPZ_CHECK(window.Create(TestInstance(), 320.0f, 240.0f));
+  window.Show();
+  PumpFor(30);
+
+  const HANDLE process = GetCurrentProcess();
+  const DWORD gdi_before = GetGuiResources(process, GR_GDIOBJECTS);
+  const DWORD user_before = GetGuiResources(process, GR_USEROBJECTS);
+
+  for (int i = 0; i < 50; ++i) {
+    window.TogglePin();  // repaints every toggle: glyph state changed
+  }
+  PumpFor(60);
+
+  const long long gdi_drift = static_cast<long long>(GetGuiResources(process, GR_GDIOBJECTS)) -
+                              static_cast<long long>(gdi_before);
+  const long long user_drift = static_cast<long long>(GetGuiResources(process, GR_USEROBJECTS)) -
+                               static_cast<long long>(user_before);
+  DHEPZ_CHECK(gdi_drift <= 2);
+  DHEPZ_CHECK(user_drift <= 2);
+}
+
+DHEPZ_TEST(AppWindow, SettingsButtonAppearsOnlyWithHandler) {
+  shell::AppWindow window;
+  DHEPZ_CHECK(window.Create(TestInstance()));  // 960x640 content -> 1008x688
+  window.Show();
+  PumpFor(30);
+  const HWND hwnd = static_cast<HWND>(window.hwnd());
+
+  // Client geometry at 96 DPI: margin 24, content_right 984, button 46 px.
+  // Order left-to-right: pin, [settings], min, max, close.
+  bool opened = false;
+  // No handler: four buttons, the pin occupies x 800..846; the future gear
+  // slot (x 754..800) is plain caption — clicking it does nothing.
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(770, 40));
+  DHEPZ_CHECK_FALSE(opened);
+  DHEPZ_CHECK_FALSE(window.pinned());
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
+  DHEPZ_CHECK(window.pinned());
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
+  DHEPZ_CHECK_FALSE(window.pinned());
+
+  window.set_settings_handler([&opened] { opened = true; });
+  // The gear now takes x 800..846 and the pin shifts left to 754..800.
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
+  DHEPZ_CHECK(opened);
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(770, 40));
+  DHEPZ_CHECK(window.pinned());
+}
