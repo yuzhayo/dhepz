@@ -1,0 +1,24 @@
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.jpg binary
+*.gif binary
+*.pdb binary
+*.exe binary
+*.dll binary
+*.lib binary
+*.zip binary
+*.nupkg binary
+
+*.ps1 text eol=lf
+*.rc text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+*.sln text eol=lf
+*.vcxproj text eol=lf
+*.props text eol=lf
+*.manifest text eol=lf
+*.yml text eol=lf
