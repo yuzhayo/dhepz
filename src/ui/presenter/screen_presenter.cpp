@@ -178,7 +178,8 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
     if (source == focused_node_) {
       const render::Rect ring{node.bounds.x - 2.0f, node.bounds.y - 2.0f,
                               node.bounds.width + 4.0f, node.bounds.height + 4.0f};
-      backend_->StrokeRect(ring, Token(L"accent", {96, 165, 250, 255}), 2.0f);
+      backend_->StrokeRoundedRect(ring, render::CornerRadius::Uniform(8.0f),
+                                  Token(L"accent", {96, 165, 250, 255}), 2.0f);
     }
   }
   for (const layout::LayoutNode& child : node.children) {
