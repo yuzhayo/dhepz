@@ -3,12 +3,15 @@
 #include "resource.h"
 #include "dhepz_version_generated.h"
 
-// The icon and the embedded UI JSON are added in later phases (see issue #24).
+// The embedded UI JSON is added in a later phase (see issue #52).
 // VERSIONINFO is here from the start so the installed binary is identifiable
 // and the release workflow's version bump has something to move.
 //
 // NOTE: this file must stay LF-only. It will embed UI JSON verbatim via RCDATA,
 // and CRLF corrupts it.
+
+// First ICON statement becomes the EXE icon in Explorer.
+IDI_APP_ICON ICON "..\\assets\\app.ico"
 
 1 VERSIONINFO
  FILEVERSION DHEPZ_VERSION_COMMA

@@ -124,6 +124,7 @@
     <ClCompile Include="..\src\render\**\*.cpp" />
     <ClCompile Include="..\src\ui\shell\**\*.cpp" />
     <ClInclude Include="**\*.h" />
+    <ResourceCompile Include="app_icon.rc" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
