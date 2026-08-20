@@ -135,6 +135,9 @@
         },
         "backdrop": {
           "kind": "string"
+        },
+        "module_id": {
+          "kind": "string"
         }
       }
     },
