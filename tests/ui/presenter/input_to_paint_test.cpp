@@ -113,9 +113,10 @@ DHEPZ_TEST(GatePhase2, InputToPaintWithinBudget) {
   wchar_t ci_buffer[8]{};
   const bool on_ci = GetEnvironmentVariableW(L"CI", ci_buffer, 8) != 0;
 #ifdef NDEBUG
-  DHEPZ_CHECK(ms < (on_ci ? 500.0 : 16.0));
+  const double bound = on_ci ? 500.0 : 16.0;
 #else
-  DHEPZ_CHECK(ms < 2000.0);
+  const double bound = on_ci ? 2000.0 : 2000.0;
 #endif
+  DHEPZ_CHECK(ms < bound);
   window.Hide();
 }
