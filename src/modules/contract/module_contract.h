@@ -51,7 +51,15 @@ struct PeerInfo {
 
 enum class ProcessOperation { Launch, ElevatedLaunch, Capture };
 
-enum class HostOperationKind { Launch, ElevatedLaunch, Capture, FolderProbe, ConfigSave };
+enum class HostOperationKind {
+  Launch,
+  ElevatedLaunch,
+  Capture,
+  FolderProbe,
+  ConfigSave,
+  SettingsLoad,
+  SettingsSave,
+};
 
 struct AsyncRequestToken {
   std::uint64_t value = 0;
@@ -160,9 +168,11 @@ class ModuleHost {
   virtual core::Status SettingsRead(std::wstring_view key, std::wstring* out) = 0;
   virtual core::Status SettingsReadGlobal(std::wstring_view key, std::wstring* out) = 0;
   virtual core::Status SettingsWrite(std::wstring_view key, std::wstring_view value) = 0;
-  // Bulk/blob data scoped to this moduleId only.
-  virtual core::Status StorageWrite(std::wstring_view name, std::wstring_view data) = 0;
-  virtual core::Status StorageRead(std::wstring_view name, std::wstring* out) = 0;
+  // Explicit readiness boundary for the parent-owned settings snapshot.
+  // Until this completion arrives, reads return their empty/default value and
+  // NotFound. No module infers readiness from a synchronous read result.
+  virtual core::Status StartSettingsLoad(HostOperationCallback callback,
+                                         AsyncRequestToken* token) = 0;
   // Starts immediately and returns a parent-issued token. The callback is
   // delivered on the UI thread with this host lifetime's generation. Modules
   // pass argv, never a prequoted command line; the parent owns quoting.

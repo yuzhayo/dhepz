@@ -53,21 +53,9 @@ core::Status GateHost::SettingsWrite(std::wstring_view key,
   return settings_service_->WriteModule(module_id_, key, value);
 }
 
-core::Status GateHost::StorageWrite(std::wstring_view name,
-                                    std::wstring_view data) {
-  std::lock_guard lock(mutex_);
-  storage_[std::wstring(name)] = std::wstring(data);
-  return core::Ok();
-}
-
-core::Status GateHost::StorageRead(std::wstring_view name, std::wstring* out) {
-  std::lock_guard lock(mutex_);
-  const auto it = storage_.find(std::wstring(name));
-  if (it == storage_.end()) {
-    return core::Err(core::ErrorCode::NotFound, L"no such blob");
-  }
-  *out = it->second;
-  return core::Ok();
+core::Status GateHost::StartSettingsLoad(HostOperationCallback callback,
+                                         AsyncRequestToken* token) {
+  return settings_service_->StartLoad(std::move(callback), token);
 }
 
 core::Status GateHost::StartProcess(const ProcessRequest& request,
@@ -92,6 +80,7 @@ core::Status GateHost::StartFolderProbe(const FolderProbeRequest& request,
 
 void GateHost::CancelRequest(AsyncRequestToken token) {
   if (operations_) operations_->CancelRequest(token);
+  settings_service_->CancelRequest(token);
 }
 
 core::Status GateHost::PublishStatePatch(const json::Value& patch) {

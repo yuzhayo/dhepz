@@ -18,6 +18,7 @@
 #include "modules/contract/module_contract.h"
 #include "modules/contract/module_manifest.h"
 #include "modules/gate/gate_host.h"
+#include "modules/gate/settings_store.h"
 #include "ui/config/resolved_ui_document.h"
 
 namespace modules {
@@ -63,12 +64,15 @@ class AppGate final {
   core::Status ConfigureHostOperations(void* ui_window, unsigned int completion_message,
                                        HostStatePatchHandler state_patch_handler);
   core::Status ConfigureConfigOverridePath(std::wstring path);
+  // Test seam; production leaves this empty and uses StateDir/settings.json.
+  core::Status ConfigureSettingsStorePath(std::wstring path);
 
   const ui::config::ResolvedUiDocument* document() const { return document_.get(); }
   std::uint64_t document_generation() const { return document_generation_; }
   std::vector<PeerInfo> Peers() const;
   const std::vector<RejectEntry>& Rejects() const { return rejects_; }
   const std::vector<CapabilityGrant>& Grants() const { return grants_; }
+  const std::vector<SettingsStoreDiagnostic>& SettingsDiagnostics() const;
   bool Mounted(std::wstring_view module_id) const;
 
   // Lazy activation: builds the descriptor and Bind()s it on first visit.

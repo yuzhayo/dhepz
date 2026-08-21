@@ -104,6 +104,7 @@ class IntruderModule final : public modules::ModuleDescriptor {
 std::unique_ptr<modules::ModuleDescriptor> MakeSettings() {
   return std::make_unique<SettingsModule>();
 }
+
 std::unique_ptr<modules::ModuleDescriptor> MakeEditor() {
   return std::make_unique<EditorModule>();
 }
@@ -224,13 +225,73 @@ void ResetGlobals() {
 
 }  // namespace
 
+DHEPZ_TEST(SettingsPersistence, NarrowHostSurvivesNewGateOnSameFile) {
+  Rig rig;
+  const std::wstring path = TempFile();
+  modules::ResetRegistryForTests();
+  modules::RegisterModule(L"alpha", &MakeAlpha);
+  const std::wstring embedded =
+      Embedded({Screen(L"alpha", L"Alpha")}, {Manifest(L"alpha", L"Alpha")});
+
+  {
+    ResetGlobals();
+    modules::AppGate first;
+    DHEPZ_CHECK(
+        first.ConfigureHostOperations(rig.window, rig.state.completion_message, {}).ok());
+    DHEPZ_CHECK(first.ConfigureSettingsStorePath(path).ok());
+    DHEPZ_CHECK(first.StartWithEmbedded(embedded).ok());
+    DHEPZ_CHECK(first.Activate(L"alpha-home").ok());
+    std::atomic<bool> ready{false};
+    modules::AsyncRequestToken load;
+    DHEPZ_CHECK(g_alpha_host
+                    ->StartSettingsLoad(
+                        [&](const modules::HostOperationCompletion&) { ready = true; },
+                        &load)
+                    .ok());
+    PumpUntil([&] { return ready.load(); }, 2000);
+    DHEPZ_CHECK(ready.load());
+    DHEPZ_CHECK(g_alpha_host->SettingsWrite(L"persisted", L"across-process").ok());
+  }
+
+  {
+    ResetGlobals();
+    modules::AppGate second;
+    DHEPZ_CHECK(
+        second.ConfigureHostOperations(rig.window, rig.state.completion_message, {}).ok());
+    DHEPZ_CHECK(second.ConfigureSettingsStorePath(path).ok());
+    DHEPZ_CHECK(second.StartWithEmbedded(embedded).ok());
+    DHEPZ_CHECK(second.Activate(L"alpha-home").ok());
+    std::atomic<bool> ready{false};
+    modules::HostOperationCompletion load_completion;
+    modules::AsyncRequestToken load;
+    DHEPZ_CHECK(g_alpha_host
+                    ->StartSettingsLoad(
+                        [&](const modules::HostOperationCompletion& completion) {
+                          load_completion = completion;
+                          ready = true;
+                        },
+                        &load)
+                    .ok());
+    PumpUntil([&] { return ready.load(); }, 2000);
+    DHEPZ_CHECK(ready.load());
+    DHEPZ_CHECK(load_completion.status.ok());
+    std::wstring value;
+    DHEPZ_CHECK(g_alpha_host->SettingsRead(L"persisted", &value).ok());
+    DHEPZ_CHECK_EQ(value, std::wstring(L"across-process"));
+  }
+  modules::ResetRegistryForTests();
+}
+
 DHEPZ_TEST(CapabilityFacets, SettingsAllIsTypedSharedAndRestrictedToSettingsModule) {
+  Rig rig;
   modules::ResetRegistryForTests();
   ResetGlobals();
   modules::RegisterModule(L"settings", &MakeSettings);
   modules::RegisterModule(L"alpha", &MakeAlpha);
   modules::RegisterModule(L"intruder", &MakeIntruder);
   modules::AppGate gate;
+  DHEPZ_CHECK(gate.ConfigureHostOperations(rig.window, rig.state.completion_message, {}).ok());
+  DHEPZ_CHECK(gate.ConfigureSettingsStorePath(TempFile()).ok());
   const std::wstring embedded = Embedded(
       {Screen(L"settings", L"Settings"), Screen(L"alpha", L"Alpha"),
        Screen(L"intruder", L"Intruder")},
@@ -254,6 +315,19 @@ DHEPZ_TEST(CapabilityFacets, SettingsAllIsTypedSharedAndRestrictedToSettingsModu
   DHEPZ_CHECK(gate.Activate(L"alpha-home").ok());
   DHEPZ_CHECK(g_settings_facet != nullptr);
   DHEPZ_CHECK(g_alpha_host != nullptr);
+  std::atomic<bool> settings_ready{false};
+  modules::AsyncRequestToken settings_load;
+  DHEPZ_CHECK(g_alpha_host
+                  ->StartSettingsLoad(
+                      [&](const modules::HostOperationCompletion& completion) {
+                        DHEPZ_CHECK(completion.kind ==
+                                    modules::HostOperationKind::SettingsLoad);
+                        settings_ready = true;
+                      },
+                      &settings_load)
+                  .ok());
+  PumpUntil([&] { return settings_ready.load(); }, 2000);
+  DHEPZ_CHECK(settings_ready.load());
   modules::SettingsAllFacet* denied_settings = g_settings_facet;
   modules::ConfigWriteFacet* denied_config =
       reinterpret_cast<modules::ConfigWriteFacet*>(g_settings_facet);

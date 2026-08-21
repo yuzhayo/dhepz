@@ -42,8 +42,15 @@ struct TestHost final : modules::ModuleHost {
     last_write = std::wstring(key);
     return core::Ok();
   }
-  core::Status StorageWrite(std::wstring_view, std::wstring_view) override { return core::Ok(); }
-  core::Status StorageRead(std::wstring_view, std::wstring*) override { return core::Ok(); }
+  core::Status StartSettingsLoad(modules::HostOperationCallback callback,
+                                 modules::AsyncRequestToken* token) override {
+    token->value = 40;
+    modules::HostOperationCompletion completion;
+    completion.token = *token;
+    completion.kind = modules::HostOperationKind::SettingsLoad;
+    callback(completion);
+    return core::Ok();
+  }
   core::Status StartProcess(const modules::ProcessRequest& request,
                             modules::HostOperationCallback callback,
                             modules::AsyncRequestToken* token) override {
@@ -122,6 +129,21 @@ class TestModule final : public modules::ModuleDescriptor {
 };
 
 }  // namespace
+
+DHEPZ_TEST(ModuleContract, SettingsReadinessIsAnExplicitAsyncCompletion) {
+  TestHost host;
+  modules::HostOperationCompletion completion;
+  modules::AsyncRequestToken token;
+  DHEPZ_CHECK(host.StartSettingsLoad(
+                        [&](const modules::HostOperationCompletion& value) {
+                          completion = value;
+                        },
+                        &token)
+                  .ok());
+  DHEPZ_CHECK(token);
+  DHEPZ_CHECK(completion.token == token);
+  DHEPZ_CHECK(completion.kind == modules::HostOperationKind::SettingsLoad);
+}
 
 DHEPZ_TEST(ModuleManifest, ValidManifestParses) {
   modules::ModuleManifest manifest;

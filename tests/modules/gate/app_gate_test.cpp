@@ -29,7 +29,8 @@ class SimpleModule final : public modules::ModuleDescriptor {
   std::vector<std::wstring> DeclaredCapabilities() const override { return Base::Caps(); }
   core::Status Bind(modules::ModuleHost& host) override {
     bound_ = true;
-    return host.SettingsWrite(L"k", L"v");
+    (void)host;
+    return core::Ok();
   }
   core::Status Handle(std::wstring_view action, const json::Value&, json::Value*) override {
     handled_ = std::wstring(action);

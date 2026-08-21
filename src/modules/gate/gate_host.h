@@ -3,7 +3,6 @@
 #pragma once
 
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -44,8 +43,8 @@ class GateHost final : public ModuleHost,
   core::Status SettingsRead(std::wstring_view key, std::wstring* out) override;
   core::Status SettingsReadGlobal(std::wstring_view key, std::wstring* out) override;
   core::Status SettingsWrite(std::wstring_view key, std::wstring_view value) override;
-  core::Status StorageWrite(std::wstring_view name, std::wstring_view data) override;
-  core::Status StorageRead(std::wstring_view name, std::wstring* out) override;
+  core::Status StartSettingsLoad(HostOperationCallback callback,
+                                 AsyncRequestToken* token) override;
   core::Status StartProcess(const ProcessRequest& request,
                             HostOperationCallback callback,
                             AsyncRequestToken* token) override;
@@ -88,7 +87,6 @@ class GateHost final : public ModuleHost,
   bool config_write_granted_ = false;
   ModuleSurface surface_;
   std::mutex mutex_;
-  std::map<std::wstring, std::wstring> storage_;
   std::vector<std::wstring> log_;
   core::Status last_status_;
   std::unique_ptr<HostOperationDispatcher> operations_;
