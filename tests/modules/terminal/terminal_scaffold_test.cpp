@@ -71,6 +71,13 @@ class FakeLaunchHost final : public modules::ModuleHost {
     folder_token = *token;
     return core::Ok();
   }
+  core::Status PickFolder(const modules::FolderPickerRequest& value,
+                          modules::FolderPickerResult* result) override {
+    picker_request = value;
+    if (!picker_status.ok()) return picker_status;
+    result->directory = picker_result;
+    return core::Ok();
+  }
   void CancelRequest(modules::AsyncRequestToken token) override {
     cancelled.push_back(token);
   }
@@ -144,6 +151,9 @@ class FakeLaunchHost final : public modules::ModuleHost {
   modules::FolderProbeRequest folder_request;
   modules::HostOperationCallback folder_callback;
   modules::AsyncRequestToken folder_token;
+  modules::FolderPickerRequest picker_request;
+  std::wstring picker_result;
+  core::Status picker_status;
   std::vector<modules::AsyncRequestToken> cancelled;
   std::vector<json::Value> patches;
   core::Status reported;
@@ -194,7 +204,7 @@ DHEPZ_TEST(TerminalScaffold, ManifestValidWithNoCapabilities) {
       modules::ParseManifest(Ws(manifest_text), &manifest, &diagnostics).ok());
   DHEPZ_CHECK_EQ(manifest.module_id, std::wstring(L"terminal"));
   DHEPZ_CHECK(manifest.capabilities.empty());
-  DHEPZ_CHECK(manifest.show_in_tabs);
+  DHEPZ_CHECK_FALSE(manifest.show_in_tabs);
 }
 
 DHEPZ_TEST(TerminalScaffold, SelfRegistersAndIsDiscoverable) {
@@ -210,28 +220,29 @@ DHEPZ_TEST(TerminalScaffold, SelfRegistersAndIsDiscoverable) {
 
 DHEPZ_TEST(TerminalLogic, WslBuilderKeepsDistroAsOneStructuredArgument) {
   terminal::LaunchSpec spec;
-  spec.shell = terminal::Shell::Wsl;
+  spec.target = terminal::Target::Wsl;
+  spec.working_folder = L"C:\\work";
   spec.wsl_distro = L"My Distro";
   modules::ProcessRequest request;
   DHEPZ_CHECK(terminal::BuildProcessRequest(spec, &request).ok());
-  DHEPZ_CHECK_EQ(request.executable, std::wstring(L"wsl.exe"));
-  DHEPZ_CHECK_EQ(request.arguments.size(), static_cast<std::size_t>(2));
-  DHEPZ_CHECK_EQ(request.arguments[1], std::wstring(L"My Distro"));
+  DHEPZ_CHECK_EQ(request.executable, std::wstring(L"wt.exe"));
+  DHEPZ_CHECK(std::find(request.arguments.begin(), request.arguments.end(),
+                        std::wstring(L"My Distro")) != request.arguments.end());
 }
 
-DHEPZ_TEST(TerminalLogic, TypedPayloadBuildsEveryShellAndElevationMode) {
+DHEPZ_TEST(TerminalLogic, TypedPayloadBuildsEveryApprovedTarget) {
   struct Case {
     const wchar_t* json;
     const wchar_t* executable;
     modules::ProcessOperation operation;
   };
   const Case cases[] = {
-      {LR"({"shell":"powershell","admin":false,"working_folder":"C:\\work","venv":null})",
-       L"powershell.exe", modules::ProcessOperation::Launch},
-      {LR"({"shell":"cmd","admin":true,"working_folder":"C:\\work","venv":null})",
-       L"cmd.exe", modules::ProcessOperation::ElevatedLaunch},
-      {LR"({"shell":"wsl","wsl_distro":"Ubuntu","admin":false,"working_folder":"/work","venv":null})",
-       L"wsl.exe", modules::ProcessOperation::Launch},
+      {LR"({"target":"powershell","working_folder":"C:\\work"})",
+       L"wt.exe", modules::ProcessOperation::Launch},
+      {LR"({"target":"powershell_admin","working_folder":"C:\\work"})",
+       L"wt.exe", modules::ProcessOperation::ElevatedLaunch},
+      {LR"({"target":"wsl","wsl_distro":"Ubuntu","working_folder":"C:\\work"})",
+       L"wt.exe", modules::ProcessOperation::Launch},
   };
   for (const Case& item : cases) {
     json::Value payload;
@@ -245,69 +256,53 @@ DHEPZ_TEST(TerminalLogic, TypedPayloadBuildsEveryShellAndElevationMode) {
   }
 }
 
-DHEPZ_TEST(TerminalLogic, ShellSpecificVenvArgumentsAndInvalidCombinations) {
+DHEPZ_TEST(TerminalLogic, VenvActivationIsOwnedByEachApprovedTarget) {
   terminal::LaunchSpec powershell;
-  powershell.shell = terminal::Shell::PowerShell;
-  powershell.venv = {terminal::PathKind::Windows,
-                     L"C:\\work\\.venv\\Scripts\\Activate.ps1"};
+  powershell.target = terminal::Target::PowerShell;
+  powershell.working_folder = L"C:\\work";
+  powershell.venv_enabled = true;
   modules::ProcessRequest request;
   DHEPZ_CHECK(terminal::BuildProcessRequest(powershell, &request).ok());
-  DHEPZ_CHECK_EQ(request.arguments.back(), powershell.venv.activate_path);
-
-  terminal::LaunchSpec cmd = powershell;
-  cmd.shell = terminal::Shell::Cmd;
-  cmd.venv.activate_path = L"C:\\work\\.venv\\Scripts\\activate.bat";
-  DHEPZ_CHECK(terminal::BuildProcessRequest(cmd, &request).ok());
-  DHEPZ_CHECK_EQ(request.arguments[0], std::wstring(L"/K"));
+  DHEPZ_CHECK_EQ(request.arguments.back(),
+                 std::wstring(L"C:\\work\\.venv\\Scripts\\Activate.ps1"));
 
   terminal::LaunchSpec wsl;
-  wsl.shell = terminal::Shell::Wsl;
+  wsl.target = terminal::Target::Wsl;
+  wsl.working_folder = L"C:\\work";
   wsl.wsl_distro = L"Ubuntu";
-  wsl.venv = {terminal::PathKind::Linux, L"/work/.venv/bin/activate"};
+  wsl.venv_enabled = true;
   DHEPZ_CHECK(terminal::BuildProcessRequest(wsl, &request).ok());
-  DHEPZ_CHECK_EQ(request.arguments.back(), wsl.venv.activate_path);
-
-  wsl.working_dir = L"C:\\work";
-  DHEPZ_CHECK_FALSE(terminal::BuildProcessRequest(wsl, &request).ok());
-  wsl.working_dir.clear();
-  wsl.admin = true;
-  DHEPZ_CHECK_FALSE(terminal::BuildProcessRequest(wsl, &request).ok());
-  powershell.venv = {terminal::PathKind::Linux, L"/work/.venv/bin/activate"};
-  DHEPZ_CHECK_FALSE(terminal::BuildProcessRequest(powershell, &request).ok());
+  DHEPZ_CHECK_CONTAINS(request.arguments.back(),
+                       std::wstring(L".venv/bin/activate"));
 }
 
 DHEPZ_TEST(TerminalLogic, DisabledVenvDoesNotReachTheProcessRequest) {
   json::Value payload;
   DHEPZ_CHECK(json::Parse(
-      LR"({"shell":"powershell","venv_enabled":false,"venv":{"kind":"windows","activate_path":"C:\\work\\.venv\\Scripts\\Activate.ps1"}})",
+      LR"({"target":"powershell","working_folder":"C:\\work","venv_enabled":false})",
       &payload).ok());
   terminal::LaunchSpec spec;
   DHEPZ_CHECK(terminal::ParseLaunchPayload(payload, &spec).ok());
-  DHEPZ_CHECK(spec.venv.kind == terminal::PathKind::None);
+  DHEPZ_CHECK_FALSE(spec.venv_enabled);
   modules::ProcessRequest request;
   DHEPZ_CHECK(terminal::BuildProcessRequest(spec, &request).ok());
-  DHEPZ_CHECK_EQ(request.arguments.size(), static_cast<std::size_t>(1));
-  DHEPZ_CHECK_EQ(request.arguments[0], std::wstring(L"-NoExit"));
+  DHEPZ_CHECK(std::find(request.arguments.begin(), request.arguments.end(),
+                        std::wstring(L"powershell.exe")) ==
+              request.arguments.end());
 }
 
 DHEPZ_TEST(TerminalLogic, InvalidPayloadFailsBeforeARequestCanBeBuilt) {
   const wchar_t* cases[] = {
-      LR"({})", LR"({"shell":"fish"})", LR"({"shell":"wsl"})",
-      LR"({"shell":"cmd","admin":"yes"})",
-      LR"({"shell":"cmd","surprise":true})",
-      LR"({"shell":"powershell","venv":{"kind":"windows"}})"};
+      LR"({})", LR"({"target":"fish","working_folder":"C:\\work"})",
+      LR"({"target":"wsl","working_folder":"C:\\work"})",
+      LR"({"target":"cmd","working_folder":"C:\\work"})",
+      LR"({"target":"powershell","working_folder":"C:\\work","surprise":true})"};
   for (const wchar_t* text : cases) {
     json::Value payload;
     DHEPZ_CHECK(json::Parse(text, &payload).ok());
     terminal::LaunchSpec spec;
     const core::Status parsed = terminal::ParseLaunchPayload(payload, &spec);
-    if (std::wstring_view(text).find(L"\"shell\":\"wsl\"") !=
-        std::wstring_view::npos && parsed.ok()) {
-      modules::ProcessRequest request;
-      DHEPZ_CHECK_FALSE(terminal::BuildProcessRequest(spec, &request).ok());
-    } else {
-      DHEPZ_CHECK_FALSE(parsed.ok());
-    }
+    DHEPZ_CHECK_FALSE(parsed.ok());
   }
 }
 
@@ -320,12 +315,18 @@ DHEPZ_TEST(TerminalModule, UsesHostRequestAndPublishesCancelledCompletion) {
 
   json::Value payload;
   DHEPZ_CHECK(json::Parse(
-      LR"({"shell":"cmd","admin":true,"working_folder":"C:\\work","venv_enabled":false,"venv":null})",
+      LR"({"target":"powershell_admin","working_folder":"C:\\work","venv_enabled":false})",
       &payload).ok());
   json::Value immediate;
   DHEPZ_CHECK(module->Handle(L"terminal:launch", payload, &immediate).ok());
+  DHEPZ_CHECK_EQ(host.folder_calls, 1);
+  DHEPZ_CHECK_EQ(host.process_calls, 0);
+  modules::FolderProbeResult folder;
+  folder.normalized_directory = L"C:\\work";
+  folder.directory_exists = true;
+  host.CompleteFolder(core::Ok(), std::move(folder));
   DHEPZ_CHECK_EQ(host.process_calls, 1);
-  DHEPZ_CHECK_EQ(host.request.executable, std::wstring(L"cmd.exe"));
+  DHEPZ_CHECK_EQ(host.request.executable, std::wstring(L"wt.exe"));
   DHEPZ_CHECK(host.request.operation == modules::ProcessOperation::ElevatedLaunch);
   DHEPZ_CHECK_EQ(host.request.working_directory, std::wstring(L"C:\\work"));
   DHEPZ_CHECK(immediate.BoolField(L"busy"));
@@ -346,7 +347,8 @@ DHEPZ_TEST(TerminalModule, InvalidPayloadNeverInvokesHost) {
       terminal::MakeTerminalForTests();
   DHEPZ_CHECK(module->Bind(host).ok());
   json::Value payload;
-  DHEPZ_CHECK(json::Parse(LR"({"shell":"wsl","admin":true})", &payload).ok());
+  DHEPZ_CHECK(json::Parse(
+      LR"({"target":"wsl","working_folder":"C:\\work"})", &payload).ok());
   json::Value patch;
   const core::Status status =
       module->Handle(L"terminal:launch", payload, &patch);
@@ -459,61 +461,50 @@ DHEPZ_TEST(TerminalModule, ReleaseCancelsWslAndDropsItsCompletion) {
   DHEPZ_CHECK(host.patches.empty());
 }
 
-DHEPZ_TEST(TerminalModule, FolderProbePublishesCompatibleVenvCandidates) {
+DHEPZ_TEST(TerminalModule, BrowseUsesNativeParentPickerAndReturnsSelection) {
   FakeLaunchHost host;
+  host.picker_result = L"C:\\work";
   const auto module = terminal::MakeTerminalForTests();
   DHEPZ_CHECK(module->Bind(host).ok());
-  host.patches.clear();
   json::Value payload;
-  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\work"})", &payload).ok());
+  DHEPZ_CHECK(json::Parse(
+      LR"({"initial_folder":"C:\\initial"})", &payload).ok());
   json::Value immediate;
-  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", payload, &immediate).ok());
-  DHEPZ_CHECK_EQ(host.folder_calls, 1);
-  DHEPZ_CHECK(immediate.BoolField(L"busy"));
-  DHEPZ_CHECK_EQ(host.folder_request.relative_files.size(),
-                 static_cast<std::size_t>(2));
-
-  modules::FolderProbeResult folder;
-  folder.normalized_directory = L"C:\\work";
-  folder.directory_exists = true;
-  folder.files = {{L".venv\\Scripts\\Activate.ps1", true},
-                  {L".venv\\Scripts\\activate.bat", false}};
-  host.CompleteFolder(core::Ok(), std::move(folder));
-  const json::Value& patch = host.patches.back();
-  DHEPZ_CHECK(patch.BoolField(L"launch_enabled"));
-  DHEPZ_CHECK(patch.BoolField(L"venv_available"));
-  DHEPZ_CHECK(patch.ObjectField(L"powershell_venv") != nullptr);
-  DHEPZ_CHECK(patch.Find(L"cmd_venv")->is_null());
+  DHEPZ_CHECK(
+      module->Handle(L"terminal:browse-folder", payload, &immediate).ok());
+  DHEPZ_CHECK_EQ(host.picker_request.initial_directory,
+                 std::wstring(L"C:\\initial"));
+  DHEPZ_CHECK_EQ(immediate.StringField(L"working_folder"),
+                 std::wstring(L"C:\\work"));
   module->Release();
 }
 
-DHEPZ_TEST(TerminalModule, InvalidAndStaleFolderResultsCannotEnableLaunch) {
+DHEPZ_TEST(TerminalModule, EnabledVenvCreatesThenActivatesBeforeLaunch) {
   FakeLaunchHost host;
   const auto module = terminal::MakeTerminalForTests();
   DHEPZ_CHECK(module->Bind(host).ok());
-  host.patches.clear();
-  json::Value old_payload;
-  json::Value new_payload;
-  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\old"})", &old_payload).ok());
-  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\new"})", &new_payload).ok());
+  json::Value payload;
+  DHEPZ_CHECK(json::Parse(
+      LR"({"target":"powershell","working_folder":"C:\\work","venv_enabled":true})",
+      &payload).ok());
   json::Value immediate;
-  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", old_payload, &immediate).ok());
-  const auto old_callback = host.folder_callback;
-  const auto old_token = host.folder_token;
-  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", new_payload, &immediate).ok());
-
-  modules::HostOperationCompletion stale;
-  stale.token = old_token;
-  stale.kind = modules::HostOperationKind::FolderProbe;
-  stale.folder.directory_exists = true;
-  stale.folder.normalized_directory = L"C:\\old";
-  old_callback(stale);
-  DHEPZ_CHECK(host.patches.empty());
-
-  modules::FolderProbeResult missing;
-  host.CompleteFolder(core::Ok(), std::move(missing));
-  DHEPZ_CHECK_FALSE(host.patches.back().BoolField(L"launch_enabled", true));
-  DHEPZ_CHECK_FALSE(host.reported.ok());
+  DHEPZ_CHECK(module->Handle(L"terminal:launch", payload, &immediate).ok());
+  modules::FolderProbeResult first_probe;
+  first_probe.normalized_directory = L"C:\\work";
+  first_probe.directory_exists = true;
+  first_probe.files = {{L".venv\\Scripts\\Activate.ps1", false}};
+  host.CompleteFolder(core::Ok(), std::move(first_probe));
+  DHEPZ_CHECK_EQ(host.capture_request.executable, std::wstring(L"py.exe"));
+  host.CompleteCapture(core::Ok(), L"");
+  modules::FolderProbeResult second_probe;
+  second_probe.normalized_directory = L"C:\\work";
+  second_probe.directory_exists = true;
+  second_probe.files = {{L".venv\\Scripts\\Activate.ps1", true}};
+  host.CompleteFolder(core::Ok(), std::move(second_probe));
+  DHEPZ_CHECK_EQ(host.process_calls, 1);
+  DHEPZ_CHECK_EQ(host.request.executable, std::wstring(L"wt.exe"));
+  DHEPZ_CHECK_EQ(host.request.arguments.back(),
+                 std::wstring(L"C:\\work\\.venv\\Scripts\\Activate.ps1"));
   module->Release();
 }
 
@@ -524,30 +515,36 @@ DHEPZ_TEST(TerminalModule, OnlySuccessfulSpawnPersistsRecentFolder) {
   host.patches.clear();
   json::Value payload;
   DHEPZ_CHECK(json::Parse(
-      LR"({"shell":"cmd","working_folder":"C:\\work"})", &payload).ok());
+      LR"({"target":"powershell","working_folder":"C:\\work"})", &payload).ok());
   json::Value immediate;
   DHEPZ_CHECK(module->Handle(L"terminal:launch", payload, &immediate).ok());
+  modules::FolderProbeResult folder;
+  folder.normalized_directory = L"C:\\work";
+  folder.directory_exists = true;
+  host.CompleteFolder(core::Ok(), folder);
   host.CompleteProcess(core::Err(core::ErrorCode::Cancelled, L"cancelled"));
-  DHEPZ_CHECK_EQ(host.settings_writes, 0);
+  DHEPZ_CHECK_EQ(host.settings_writes, 1);
   DHEPZ_CHECK(host.patches.back().Find(L"recent_folders") == nullptr);
 
   DHEPZ_CHECK(module->Handle(L"terminal:launch", payload, &immediate).ok());
+  host.CompleteFolder(core::Ok(), std::move(folder));
   host.CompleteProcess(core::Ok());
-  DHEPZ_CHECK_EQ(host.settings_writes, 1);
+  DHEPZ_CHECK_EQ(host.settings_writes, 3);
   DHEPZ_CHECK_EQ(host.patches.back().ArrayField(L"recent_folders")->size(),
                  static_cast<std::size_t>(1));
   module->Release();
 }
 
-DHEPZ_TEST(TerminalModule, ReleaseInvalidatesOutstandingFolderCallback) {
+DHEPZ_TEST(TerminalModule, ReleaseInvalidatesOutstandingLaunchProbe) {
   FakeLaunchHost host;
   const auto module = terminal::MakeTerminalForTests();
   DHEPZ_CHECK(module->Bind(host).ok());
   host.patches.clear();
   json::Value payload;
-  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\work"})", &payload).ok());
+  DHEPZ_CHECK(json::Parse(
+      LR"({"target":"powershell","working_folder":"C:\\work"})", &payload).ok());
   json::Value immediate;
-  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", payload, &immediate).ok());
+  DHEPZ_CHECK(module->Handle(L"terminal:launch", payload, &immediate).ok());
   const auto callback = host.folder_callback;
   const auto token = host.folder_token;
   module->Release();
