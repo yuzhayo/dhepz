@@ -1,7 +1,5 @@
-// Terminal module state (P4-04): recent-folder history persisted in the
-// module's OWN settings section (default reach), venv detection/toggle,
-// folder validation. Filesystem probes are blocking — callers run them on
-// a worker (P4-05).
+// Pure terminal history state. Physical persistence is parent-owned and
+// reached only through the module's narrowed settings section.
 #pragma once
 
 #include <string>
@@ -21,18 +19,10 @@ class RecentFolders final {
   const std::vector<std::wstring>& List() const { return folders_; }
 
   void Load(modules::ModuleHost& host);
-  void Save(modules::ModuleHost& host) const;
+  core::Status Save(modules::ModuleHost& host) const;
 
  private:
   std::vector<std::wstring> folders_;
 };
-
-// Standard virtualenv layouts: <folder>/Scripts/activate.bat (Windows) or
-// <folder>/bin/activate (posix-style checkout). Pure filesystem probes.
-bool DetectVenv(const std::wstring& folder);
-std::wstring VenvActivatePath(const std::wstring& folder);
-
-// Exists + is a directory; human-friendly Status on failure.
-core::Status ValidateFolder(const std::wstring& folder);
 
 }  // namespace terminal

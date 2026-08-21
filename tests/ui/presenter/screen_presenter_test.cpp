@@ -144,6 +144,7 @@ const char* kCore = R"({
     "input": { "properties": {
       "value_binding": { "kind": "binding" },
       "placeholder": { "kind": "string" },
+      "maximum_length": { "kind": "int", "default": 4096 },
       "tab_stop": { "kind": "bool", "default": true } } },
     "combo": { "properties": {
       "items_binding": { "kind": "binding" },
@@ -515,4 +516,38 @@ DHEPZ_TEST(ScreenPresenter, TerminalControlsRenderAndUpdateGenericBindings) {
                  std::wstring(L"Debian"));
   DHEPZ_CHECK(std::find(backend.calls.begin(), backend.calls.end(),
                         std::wstring(L"text:C:\\work")) != backend.calls.end());
+}
+
+DHEPZ_TEST(ScreenPresenter, FocusedInputEditsOnlyItsBoundRouteState) {
+  RecordingBackend backend;
+  json::Value core;
+  DHEPZ_CHECK(json::Parse(W(kCore), &core).ok());
+  std::vector<ui::config::Diagnostic> diagnostics;
+  std::unique_ptr<ui::config::ResolvedUiDocument> document;
+  DHEPZ_CHECK(ui::config::ResolveDocument(
+                  core,
+                  {{L"embedded", W(R"({ "components": [
+                    { "type": "screen", "route_id": "home", "children": [
+                      { "type": "input", "id": "folder",
+                        "value_binding": "working_folder", "maximum_length": 3 }
+                    ] }
+                  ] })")}},
+                  &diagnostics, &document).ok());
+  ui::presenter::ScreenPresenter presenter(&backend);
+  presenter.SetDocument(document.get());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  render::Rect input{};
+  DHEPZ_CHECK(presenter.InteractiveBounds(L"folder", &input));
+  DHEPZ_CHECK(presenter.HandleClick(input.x + 4.0f, input.y + 8.0f));
+  DHEPZ_CHECK(presenter.HandleText(L'a'));
+  DHEPZ_CHECK(presenter.HandleText(L'b'));
+  DHEPZ_CHECK(presenter.HandleText(L'c'));
+  DHEPZ_CHECK(presenter.HandleText(L'd'));  // consumed but capped
+  DHEPZ_CHECK_EQ(
+      presenter.ViewStateValue(L"home", L"working_folder")->AsString(),
+      std::wstring(L"abc"));
+  DHEPZ_CHECK(presenter.HandleKey(0x08));  // VK_BACK
+  DHEPZ_CHECK_EQ(
+      presenter.ViewStateValue(L"home", L"working_folder")->AsString(),
+      std::wstring(L"ab"));
 }

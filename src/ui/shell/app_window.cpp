@@ -133,6 +133,10 @@ void AppWindow::set_content_key_handler(std::function<bool(int)> handler) {
   content_key_handler_ = std::move(handler);
 }
 
+void AppWindow::set_content_text_handler(std::function<bool(wchar_t)> handler) {
+  content_text_handler_ = std::move(handler);
+}
+
 void AppWindow::set_content_click_handler(std::function<bool(float, float)> handler) {
   content_click_handler_ = std::move(handler);
 }
@@ -555,6 +559,15 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
     }
     case WM_KEYDOWN: {
       if (content_key_handler_ && content_key_handler_(static_cast<int>(wparam))) {
+        RenderFullFrame();
+        return 0;
+      }
+      return DefWindowProcW(window, message, static_cast<WPARAM>(wparam),
+                            static_cast<LPARAM>(lparam));
+    }
+    case WM_CHAR: {
+      if (content_text_handler_ &&
+          content_text_handler_(static_cast<wchar_t>(wparam))) {
         RenderFullFrame();
         return 0;
       }

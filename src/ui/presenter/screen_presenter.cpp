@@ -496,9 +496,42 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
 }
 
 bool ScreenPresenter::HandleKey(int virtual_key) {
+  if (virtual_key == VK_BACK) return EditFocusedInput(0, true);
   if (virtual_key != VK_TAB) return false;
   const bool backward = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
   return !focus_.Advance(route_, backward).empty();
+}
+
+bool ScreenPresenter::HandleText(wchar_t character) {
+  if (character < 0x20 || character == 0x7F) return false;
+  return EditFocusedInput(character, false);
+}
+
+bool ScreenPresenter::EditFocusedInput(wchar_t character, bool backspace) {
+  if (document_ == nullptr) return false;
+  const config::ComponentNode* node =
+      focus_.NodeFor(route_, focus_.Current(route_));
+  if (node == nullptr || node->type() != L"input") return false;
+  const json::Value* binding = node->Property(L"value_binding");
+  if (binding == nullptr || !binding->is_string() || binding->AsString().empty()) {
+    return false;
+  }
+  std::wstring value;
+  if (const json::Value* current = ResolveBinding(route_, binding->AsString());
+      current != nullptr && current->is_string()) {
+    value = current->AsString();
+  }
+  if (backspace) {
+    if (value.empty()) return true;
+    value.pop_back();
+  } else {
+    const long long maximum = node->GetInt(L"maximum_length", 4096);
+    if (static_cast<long long>(value.size()) >= maximum) return true;
+    value.push_back(character);
+  }
+  json::Value patch = json::Value::Object();
+  patch.Set(binding->AsString(), json::Value::String(std::move(value)));
+  return ApplyStatePatch(route_, patch).ok();
 }
 
 const json::Value* ScreenPresenter::ViewStateValue(

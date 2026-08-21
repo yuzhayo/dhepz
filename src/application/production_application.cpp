@@ -141,6 +141,8 @@ core::Status ProductionApplication::ComposeWindow() {
       });
   window_->set_content_key_handler(
       [this](int key) { return presenter_->HandleKey(key); });
+  window_->set_content_text_handler(
+      [this](wchar_t character) { return presenter_->HandleText(character); });
   window_->set_content_click_handler(
       [this](float x, float y) { return OnContentClick(x, y); });
   window_->set_content_move_handler(
@@ -264,6 +266,7 @@ void ProductionApplication::DestroyWindowState() {
     window_->set_content_layout({});
     window_->set_content_painter({});
     window_->set_content_key_handler({});
+    window_->set_content_text_handler({});
     window_->set_content_click_handler({});
     window_->set_content_move_handler({});
     window_->set_content_down_handler({});
