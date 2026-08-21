@@ -68,6 +68,36 @@ jobs:
         shell: pwsh
         run: ./tools/Merge-UiConfig.ps1 -Configuration Release -SelfTest
 
+      # Contract fixtures (#85): the three folders live in tests/fixtures/modules
+      # and drive the gate test in the suite (healthy mounts, typo'd rejected,
+      # diagnostics artifact written). Here we assert the build-time half: a
+      # byte-level malformed module.json must fail the merge that embeds the
+      # UI document, so a broken module can never ship.
+      - name: Contract fixtures — broken manifest fails the build merge
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP 'fixture-root'
+          $null = New-Item -ItemType Directory -Path "$temp\src\modules" -Force
+          Copy-Item -Recurse tests/fixtures/modules/fixture-broken "$temp\src\modules\fixture-broken"
+          $failed = $false
+          try {
+            ./tools/Merge-UiConfig.ps1 -GenerateEmbedded -RepositoryRoot $temp
+          } catch {
+            $failed = $true
+          }
+          if (-not $failed) {
+            throw "fixture-broken module.json must fail the build-time merge"
+          }
+          Write-Host "Broken manifest fails the build merge: ok"
+
+      - name: Upload diagnostics artifact
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diagnostics
+          path: artifacts/diagnostics.json
+          if-no-files-found: ignore
+
       # Emits GitHub annotations from the JUnit report directly, rather than via
       # a third-party reporter action. dorny/test-reporter's java-junit parser
       # ignores the `file`/`line` attributes on <testcase> and annotates the XML

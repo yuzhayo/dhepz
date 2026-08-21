@@ -1,0 +1,7 @@
+{
+  "components": [
+    { "type": "screen", "route_id": "fixture-healthy", "module_id": "fixture-healthy",
+      "tab_label": "Fixture Healthy", "show_in_tabs": false,
+      "children": [ { "type": "text", "text": "healthy" } ] }
+  ]
+}
