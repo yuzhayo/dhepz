@@ -176,6 +176,14 @@ bool AppGate::Mounted(std::wstring_view module_id) const {
   return false;
 }
 
+std::wstring AppGate::RouteForModule(std::wstring_view module_id) const {
+  if (document_ == nullptr) return {};
+  for (const ui::config::Route& route : document_->routes()) {
+    if (route.root.GetString(L"module_id") == module_id) return route.id;
+  }
+  return {};
+}
+
 core::Status AppGate::Activate(std::wstring_view route_id) {
   MountedModule* module = FindByRoute(route_id);
   if (module == nullptr) return core::Ok();

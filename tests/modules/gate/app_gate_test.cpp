@@ -292,6 +292,26 @@ DHEPZ_TEST(AppGateContract, UndeclaredScreenReferencesAreRejected) {
   modules::ResetRegistryForTests();
 }
 
+DHEPZ_TEST(AppGateContract, UndeclaredActionPayloadBindingIsRejectedAtSource) {
+  modules::ResetRegistryForTests();
+  modules::RegisterModule(L"ref-module", &MakeRefModule);
+  const std::wstring screen =
+      L"{\n  \"type\": \"screen\", \"route_id\": \"ref-home\", "
+      L"\"module_id\": \"ref-module\", \"children\": [\n"
+      L"    { \"type\": \"button\", \"label\": \"x\", "
+      L"\"action_payload\": { \"folder\": { \"$bind\": \"missing\" } } }\n"
+      L"  ] }";
+  modules::AppGate gate;
+  DHEPZ_CHECK(gate.StartWithEmbedded(
+                      EmbeddedWith(screen, ManifestFor(L"ref-module")))
+                  .ok());
+  DHEPZ_CHECK_FALSE(gate.Mounted(L"ref-module"));
+  DHEPZ_CHECK_CONTAINS(gate.Rejects()[0].reason,
+                       std::wstring(L"undeclared binding 'missing'"));
+  DHEPZ_CHECK(gate.Rejects()[0].line > 0);
+  modules::ResetRegistryForTests();
+}
+
 DHEPZ_TEST(AppGateContract, DuplicateActionRejectsSecondOwnerAndItsRoute) {
   modules::ResetRegistryForTests();
   modules::RegisterModule(L"alpha", &MakeAlpha);

@@ -59,6 +59,8 @@ class AppWindow final {
   void Hide();
   // Resident semantics: Close() is Hide(). The process stays up.
   void Close();
+  // Re-renders a visible window after a parent-owned state patch.
+  void Repaint();
   // Real teardown.
   void Destroy();
 

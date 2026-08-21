@@ -163,3 +163,38 @@ DHEPZ_TEST(UiSchema, CoreCatalogRejectsBadKindAndEnumWithoutValues) {
   DHEPZ_CHECK(!ui::config::ValidateCore(core, &diagnostics).ok());
   DHEPZ_CHECK(diagnostics.size() >= 2);
 }
+
+DHEPZ_TEST(UiSchema, ActionPayloadAcceptsLiteralAndExactBindingTemplates) {
+  const json::Value core = LoadCore();
+  const json::Value screen = ParseScreenText(R"({
+    "components": [
+      { "type": "button", "label": { "$bind": "caption" },
+        "action": "terminal:launch",
+        "action_payload": {
+          "shell": "powershell",
+          "admin": false,
+          "folder": { "$bind": "folder" },
+          "nested": [1, { "$bind": "choice" }]
+        } }
+    ]
+  })");
+  std::vector<ui::config::Diagnostic> diagnostics;
+  DHEPZ_CHECK(ui::config::ValidateScreen(core, screen, &diagnostics).ok());
+  DHEPZ_CHECK(diagnostics.empty());
+}
+
+DHEPZ_TEST(UiSchema, MalformedBindingTemplateIsRejectedAtItsSource) {
+  const json::Value core = LoadCore();
+  const json::Value screen = ParseScreenText(
+      "{\n"
+      "  \"components\": [\n"
+      "    { \"type\": \"button\", \"label\": \"x\",\n"
+      "      \"action_payload\": { \"folder\": { \"$bind\": \"folder\", \"extra\": true } } }\n"
+      "  ]\n"
+      "}\n");
+  std::vector<ui::config::Diagnostic> diagnostics;
+  DHEPZ_CHECK_FALSE(ui::config::ValidateScreen(core, screen, &diagnostics).ok());
+  DHEPZ_CHECK_EQ(diagnostics.size(), static_cast<std::size_t>(1));
+  DHEPZ_CHECK_EQ(diagnostics[0].line, 4);
+  DHEPZ_CHECK_CONTAINS(diagnostics[0].message, std::wstring(L"exactly"));
+}

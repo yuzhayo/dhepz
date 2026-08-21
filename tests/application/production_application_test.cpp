@@ -8,10 +8,39 @@
 
 #include "framework/test_case.h"
 #include "modules/gate/app_gate.h"
+#include "modules/registry/module_registry.h"
 #include "ui/presenter/screen_presenter.h"
 #include "ui/shell/app_window.h"
 
 namespace {
+class FakeTerminalModule final : public modules::ModuleDescriptor {
+ public:
+  std::wstring_view ModuleId() const override { return L"terminal"; }
+  std::wstring_view TabLabel() const override { return L"Terminal"; }
+  int Order() const override { return 10; }
+  bool ShowInTabs() const override { return true; }
+  std::wstring_view SettingsRoute() const override { return {}; }
+  std::vector<std::wstring> DeclaredActions() const override {
+    return {L"terminal:launch"};
+  }
+  std::vector<std::wstring> DeclaredBindings() const override { return {}; }
+  std::vector<std::wstring> DeclaredCapabilities() const override { return {}; }
+  core::Status Bind(modules::ModuleHost&) override { return core::Ok(); }
+  core::Status Handle(std::wstring_view action, const json::Value&,
+                      json::Value*) override {
+    if (action != L"terminal:launch") {
+      return core::Err(core::ErrorCode::NotFound, L"unexpected action");
+    }
+    return core::Err(core::ErrorCode::InvalidArgument,
+                     L"fake terminal dispatch observed");
+  }
+  void Release() override {}
+};
+
+std::unique_ptr<modules::ModuleDescriptor> MakeFakeTerminal() {
+  return std::make_unique<FakeTerminalModule>();
+}
+
 void PumpFor(int milliseconds) {
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(milliseconds);
@@ -80,4 +109,29 @@ DHEPZ_TEST(ProductionApplication, CloseReleasesAndNextShowRebuildsCompleteFrame)
       static_cast<unsigned long long>(window->backend()->PixelAt(x, y) >> 24),
       0xFFull);
   app.Shutdown();
+}
+
+DHEPZ_TEST(ProductionApplication, TerminalJsonActionReachesGateStatusPath) {
+  modules::ResetRegistryForTests();
+  modules::RegisterModule(L"terminal", &MakeFakeTerminal);
+  application::ProductionApplication app;
+  const core::Status start = app.Start(GetModuleHandleW(nullptr), false);
+  DHEPZ_CHECK_EQ(start.Message(), std::wstring());
+
+  app.presenter()->SwitchRoute(L"terminal");
+  app.window()->Repaint();
+  render::Rect button{};
+  DHEPZ_CHECK(app.presenter()->InteractiveBounds(L"launch-terminal", &button));
+  DHEPZ_CHECK(app.presenter()->HandleClick(
+      button.x + button.width / 2.0f,
+      button.y + button.height / 2.0f));
+  DHEPZ_CHECK_FALSE(app.presenter()->last_action_status().ok());
+  DHEPZ_CHECK_CONTAINS(app.presenter()->last_action_status().Message(),
+                       std::wstring(L"dispatch observed"));
+  DHEPZ_CHECK_EQ(app.gate()->Diagnostics().statuses.size(),
+                 static_cast<std::size_t>(1));
+  DHEPZ_CHECK_FALSE(app.gate()->Diagnostics().statuses[0].ok);
+  DHEPZ_CHECK(app.window()->visible());
+  app.Shutdown();
+  modules::ResetRegistryForTests();
 }

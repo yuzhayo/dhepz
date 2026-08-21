@@ -98,9 +98,8 @@ core::Status ProductionApplication::ComposeWindow() {
   gate_ = std::make_unique<modules::AppGate>();
   const core::Status host_configured = gate_->ConfigureHostOperations(
       window_->hwnd(), worker_completion_message_,
-      [](std::wstring_view, const json::Value&) {
-        return DHEPZ_ERR(core::ErrorCode::Unsupported,
-                         L"Route state bridge is introduced by IC-07");
+      [this](std::wstring_view module_id, const json::Value& patch) {
+        return OnStatePatch(module_id, patch);
       });
   if (!host_configured.ok()) {
     DestroyWindowState();
@@ -120,11 +119,18 @@ core::Status ProductionApplication::ComposeWindow() {
   trace::TraceConfigResolved();
   startup_stage_ = StartupStage::ConfigResolved;
 
-  // Binding the initial module may quarantine it. That is degraded mode, not
-  // a fatal shell failure; use the gate's resulting live document.
-  (void)gate_->Activate(gate_->document()->initial_route());
   presenter_ = std::make_unique<ui::presenter::ScreenPresenter>(window_->backend());
   presenter_->SetDocument(gate_->document());
+  presenter_->set_action_dispatch_handler(
+      [this](std::wstring_view route, std::wstring_view action,
+             const json::Value& payload, json::Value* state_patch) {
+        return DispatchAction(route, action, payload, state_patch);
+      });
+  presenter_->set_route_changed_handler([this](std::wstring_view route) {
+    if (gate_) (void)gate_->Activate(route);
+  });
+  (void)gate_->Activate(presenter_->current_route());
+  RefreshPresenterDocument();
   presenter_->set_caption_height(40.0f);
 
   window_->set_content_layout(
@@ -136,7 +142,7 @@ core::Status ProductionApplication::ComposeWindow() {
   window_->set_content_key_handler(
       [this](int key) { return presenter_->HandleKey(key); });
   window_->set_content_click_handler(
-      [this](float x, float y) { return presenter_->HandleClick(x, y); });
+      [this](float x, float y) { return OnContentClick(x, y); });
   window_->set_content_move_handler(
       [this](float x, float y) { return presenter_->HandleMove(x, y); });
   window_->set_content_down_handler(
@@ -169,6 +175,51 @@ void ProductionApplication::OnFramePresented() {
   }
 }
 
+core::Status ProductionApplication::DispatchAction(
+    std::wstring_view route, std::wstring_view action,
+    const json::Value& payload, json::Value* state_patch) {
+  if (!gate_ || !presenter_) {
+    return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                     L"action bridge is not composed");
+  }
+  DHEPZ_RETURN_IF_ERROR(gate_->Activate(route));
+  return gate_->Dispatch(action, payload, state_patch);
+}
+
+bool ProductionApplication::OnContentClick(float x, float y) {
+  if (!presenter_) return false;
+  const bool handled = presenter_->HandleClick(x, y);
+  RefreshPresenterDocument();
+  return handled;
+}
+
+core::Status ProductionApplication::OnStatePatch(
+    std::wstring_view module_id, const json::Value& patch) {
+  if (!gate_ || !presenter_) {
+    return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                     L"state bridge is not composed");
+  }
+  const std::wstring route = gate_->RouteForModule(module_id);
+  if (route.empty()) {
+    return DHEPZ_ERR(core::ErrorCode::NotFound,
+                     L"state patch owner has no mounted route");
+  }
+  DHEPZ_RETURN_IF_ERROR(presenter_->ApplyStatePatch(route, patch));
+  if (window_ && window_->visible() && presenter_->current_route() == route) {
+    window_->Repaint();
+  }
+  return core::Ok();
+}
+
+void ProductionApplication::RefreshPresenterDocument() {
+  if (!presenter_ || !gate_ ||
+      presenter_document_generation_ == gate_->document_generation()) {
+    return;
+  }
+  presenter_->SetDocument(gate_->document());
+  presenter_document_generation_ = gate_->document_generation();
+}
+
 core::Status ProductionApplication::ShowMainWindow() {
   if (!started_) {
     return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
@@ -176,8 +227,11 @@ core::Status ProductionApplication::ShowMainWindow() {
   }
   if (!window_) DHEPZ_RETURN_IF_ERROR(ComposeWindow());
 
+  RefreshPresenterDocument();
+
   // Rebind the current route after close/minimise invalidated window lifetime.
   (void)gate_->Activate(presenter_->current_route());
+  RefreshPresenterDocument();
   HWND hwnd = static_cast<HWND>(window_->hwnd());
   if (window_->visible()) {
     if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
@@ -221,6 +275,7 @@ void ProductionApplication::DestroyWindowState() {
   window_.reset();
   cache_.reset();
   worker_completion_message_ = 0;
+  presenter_document_generation_ = 0;
   startup_stage_ = StartupStage::None;
 }
 

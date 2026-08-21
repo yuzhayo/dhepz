@@ -8,7 +8,8 @@
       "show_in_tabs": true,
       "children": [
         { "type": "text", "text": "Terminal", "variant": "title" },
-        { "type": "button", "label": "Open PowerShell" }
+        { "type": "button", "id": "launch-terminal", "label": "Open PowerShell", "action": "terminal:launch",
+          "action_payload": {} }
       ]
     }
   ]
