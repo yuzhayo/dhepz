@@ -9,6 +9,7 @@
 
 namespace modules { class AppGate; }
 namespace render { class GdiResourceCache; struct Rect; }
+namespace json { class Value; }
 namespace shell { class AppWindow; }
 namespace tray { class TrayProcess; }
 namespace ui::presenter { class ScreenPresenter; }
@@ -48,6 +49,14 @@ class ProductionApplication final {
   void DestroyWindowState();
   void OnLayout(const render::Rect& content);
   void OnFramePresented();
+  bool OnContentClick(float x, float y);
+  core::Status DispatchAction(std::wstring_view route,
+                              std::wstring_view action,
+                              const json::Value& payload,
+                              json::Value* state_patch);
+  core::Status OnStatePatch(std::wstring_view module_id,
+                            const json::Value& patch);
+  void RefreshPresenterDocument();
 
   void* instance_ = nullptr;
   std::unique_ptr<tray::TrayProcess> tray_;
@@ -57,6 +66,7 @@ class ProductionApplication final {
   std::unique_ptr<ui::presenter::ScreenPresenter> presenter_;
   StartupStage startup_stage_ = StartupStage::None;
   unsigned int worker_completion_message_ = 0;
+  std::uint64_t presenter_document_generation_ = 0;
   bool started_ = false;
 };
 

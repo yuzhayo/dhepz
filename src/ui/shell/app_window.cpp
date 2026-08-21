@@ -196,6 +196,10 @@ void AppWindow::Close() {
   Hide();
 }
 
+void AppWindow::Repaint() {
+  if (visible()) RenderFullFrame();
+}
+
 void AppWindow::TogglePin() {
   if (hwnd_ == nullptr) return;
   pinned_ = !pinned_;

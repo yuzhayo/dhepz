@@ -259,6 +259,12 @@
         "tab_stop": {
           "kind": "bool",
           "default": true
+        },
+        "action": {
+          "kind": "string"
+        },
+        "action_payload": {
+          "kind": "object"
         }
       }
     },

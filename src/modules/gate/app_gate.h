@@ -62,6 +62,7 @@ class AppGate final {
   const std::vector<SettingsStoreDiagnostic>& SettingsDiagnostics() const;
   DiagnosticsReadModel Diagnostics() const;
   bool Mounted(std::wstring_view module_id) const;
+  std::wstring RouteForModule(std::wstring_view module_id) const;
 
   // Lazy activation: builds the descriptor and Bind()s it on first visit.
   core::Status Activate(std::wstring_view route_id);

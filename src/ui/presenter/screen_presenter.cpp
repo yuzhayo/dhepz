@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <algorithm>
+
 #include "ui/layout/backdrop.h"
 
 namespace ui::presenter {
@@ -33,6 +35,54 @@ render::Color Shade(render::Color color, int delta) {
   return render::Color{clamp(color.r + delta), clamp(color.g + delta),
                        clamp(color.b + delta), color.a};
 }
+
+bool IsBindingReference(const json::Value& value, std::wstring* name = nullptr) {
+  if (!value.is_object() || value.members().size() != 1) return false;
+  const auto& [key, binding] = value.members().front();
+  if (key != L"$bind" || !binding.is_string() || binding.AsString().empty()) {
+    return false;
+  }
+  if (name != nullptr) *name = binding.AsString();
+  return true;
+}
+
+bool ReferencesAny(const json::Value& value,
+                   const std::vector<std::wstring>& changed) {
+  std::wstring binding;
+  if (IsBindingReference(value, &binding)) {
+    const std::size_t dot = binding.find(L'.');
+    return std::find(changed.begin(), changed.end(), binding.substr(0, dot)) !=
+           changed.end();
+  }
+  if (value.is_object()) {
+    for (const auto& [key, member] : value.members()) {
+      (void)key;
+      if (ReferencesAny(member, changed)) return true;
+    }
+  } else if (value.is_array()) {
+    for (const json::Value& item : value.items()) {
+      if (ReferencesAny(item, changed)) return true;
+    }
+  }
+  return false;
+}
+
+void MergeObject(json::Value* target, const json::Value& patch) {
+  for (const auto& [key, value] : patch.members()) {
+    if (value.is_null()) {
+      target->Remove(key);
+    } else if (value.is_object()) {
+      json::Value* current = target->Find(key);
+      if (current == nullptr || !current->is_object()) {
+        target->Set(key, json::Value::Object());
+        current = target->Find(key);
+      }
+      MergeObject(current, value);
+    } else {
+      target->Set(key, value);
+    }
+  }
+}
 }  // namespace
 
 void ScreenPresenter::SetDocument(const config::ResolvedUiDocument* document) {
@@ -43,12 +93,16 @@ void ScreenPresenter::SetDocument(const config::ResolvedUiDocument* document) {
     route_ = document_->initial_route();
     focus_.EnterRoute(route_);
   }
+  backend_->InvalidateAll();
 }
 
 void ScreenPresenter::SwitchRoute(std::wstring_view route) {
   if (document_ == nullptr || document_->FindRoute(route) == nullptr) return;
+  if (route_ == route) return;
   route_ = std::wstring(route);
   focus_.EnterRoute(route_);
+  backend_->InvalidateAll();
+  if (route_changed_handler_) route_changed_handler_(route_);
 }
 
 render::Color ScreenPresenter::Token(std::wstring_view name, render::Color fallback) const {
@@ -61,6 +115,7 @@ render::Color ScreenPresenter::Token(std::wstring_view name, render::Color fallb
 
 void ScreenPresenter::Prepare(const render::Rect& content) {
   if (document_ == nullptr || route_.empty()) return;
+  last_content_ = content;
 
   // Tab strip: one tab per route that shows in tabs, anchored left.
   tab_rects_.clear();
@@ -179,13 +234,25 @@ bool ScreenPresenter::ClickNode(const layout::LayoutNode& node, float x, float y
   const config::ComponentNode* source = node.source;
   if (source == nullptr) return false;
   if (!node.bounds.contains({x, y})) return false;
-  if (!(source->GetBool(L"tab_stop") && source->GetBool(L"visible", true) &&
-        source->GetBool(L"enabled", true))) {
+  if (!(source->GetBool(L"tab_stop") && ResolvedBool(*source, L"visible", true) &&
+        ResolvedBool(*source, L"enabled", true))) {
     return false;
   }
   const std::wstring id = focus_.IdFor(route_, source);
-  if (id.empty()) return false;
-  return focus_.SetFocus(route_, id);
+  bool handled = !id.empty() && focus_.SetFocus(route_, id);
+  const std::wstring action = source->GetString(L"action");
+  if (!action.empty() && action_dispatch_handler_) {
+    json::Value payload = json::Value::Object();
+    if (const json::Value* declared = source->Property(L"action_payload")) {
+      payload = ResolveTemplate(*declared);
+    }
+    json::Value patch;
+    last_action_status_ =
+        action_dispatch_handler_(route_, action, payload, &patch);
+    if (patch.is_object()) (void)ApplyStatePatch(route_, patch);
+    handled = true;
+  }
+  return handled;
 }
 
 const config::ComponentNode* ScreenPresenter::FindButton(const layout::LayoutNode& node,
@@ -198,6 +265,25 @@ const config::ComponentNode* ScreenPresenter::FindButton(const layout::LayoutNod
     return node.source;
   }
   return nullptr;
+}
+
+const layout::LayoutNode* ScreenPresenter::FindNodeById(
+    const layout::LayoutNode& node, std::wstring_view id) const {
+  if (node.source != nullptr && node.source->id() == id) return &node;
+  for (const layout::LayoutNode& child : node.children) {
+    if (const layout::LayoutNode* found = FindNodeById(child, id)) return found;
+  }
+  return nullptr;
+}
+
+bool ScreenPresenter::InteractiveBounds(std::wstring_view id,
+                                        render::Rect* out) const {
+  if (out == nullptr || last_tree_ == nullptr) return false;
+  const layout::LayoutNode* node = FindNodeById(*last_tree_, id);
+  if (node == nullptr) return false;
+  *out = {node->bounds.x, node->bounds.y + tab_strip_height_,
+          node->bounds.width, node->bounds.height};
+  return true;
 }
 
 bool ScreenPresenter::HandleMove(float x, float y) {
@@ -256,16 +342,18 @@ bool ScreenPresenter::HandleClick(float x, float y) {
 void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
   const config::ComponentNode* source = node.source;
   if (source != nullptr) {
+    if (!ResolvedBool(*source, L"visible", true)) return;
     const std::wstring& type = source->type();
     if (type == L"text") {
-      backend_->DrawTextRun(source->GetString(L"text"), node.bounds, StyleForText(*source),
+      backend_->DrawTextRun(ResolvedString(*source, L"text"), node.bounds,
+                            StyleForText(*source),
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Left,
                             render::VerticalAlign::Top);
     } else if (type == L"button") {
       // Tab-state model: idle shows only a gray outline; hover brightens the
       // outline; press bumps; selected switches to the accent plus a tint.
       render::Rect box = node.bounds;
-      const bool selected = source->GetBool(L"selected");
+      const bool selected = ResolvedBool(*source, L"selected");
       render::Color outline = Token(L"borderStrong", {70, 76, 88, 255});
       const bool hovered = source == hover_node_;
       if (selected) {
@@ -288,7 +376,8 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
         backend_->StrokeRoundedRect(inner, render::CornerRadius::Uniform(5.0f), outline,
                                     2.0f);
       }
-      backend_->DrawTextRun(source->GetString(L"label"), box, render::TextStyle{},
+      backend_->DrawTextRun(ResolvedString(*source, L"label"), box,
+                            render::TextStyle{},
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Center,
                             render::VerticalAlign::Middle);
     }
@@ -308,6 +397,125 @@ bool ScreenPresenter::HandleKey(int virtual_key) {
   if (virtual_key != VK_TAB) return false;
   const bool backward = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
   return !focus_.Advance(route_, backward).empty();
+}
+
+const json::Value* ScreenPresenter::ViewStateValue(
+    std::wstring_view route, std::wstring_view binding) const {
+  for (const auto& [state_route, state] : route_states_) {
+    if (state_route != route) continue;
+    const json::Value* value = &state;
+    std::size_t begin = 0;
+    while (begin < binding.size()) {
+      const std::size_t dot = binding.find(L'.', begin);
+      const std::wstring_view part = binding.substr(
+          begin, dot == std::wstring_view::npos ? binding.size() - begin
+                                                : dot - begin);
+      value = value->Find(part);
+      if (value == nullptr) return nullptr;
+      if (dot == std::wstring_view::npos) return value;
+      begin = dot + 1;
+    }
+  }
+  return nullptr;
+}
+
+const json::Value* ScreenPresenter::ResolveBinding(
+    std::wstring_view route, std::wstring_view binding) const {
+  return ViewStateValue(route, binding);
+}
+
+json::Value ScreenPresenter::ResolveTemplate(const json::Value& value) const {
+  std::wstring binding;
+  if (IsBindingReference(value, &binding)) {
+    const json::Value* resolved = ResolveBinding(route_, binding);
+    return resolved != nullptr ? *resolved : json::Value::Null();
+  }
+  if (value.is_array()) {
+    json::Value out = json::Value::Array();
+    for (const json::Value& item : value.items()) out.Append(ResolveTemplate(item));
+    return out;
+  }
+  if (value.is_object()) {
+    json::Value out = json::Value::Object();
+    for (const auto& [key, member] : value.members()) {
+      out.Set(key, ResolveTemplate(member));
+    }
+    return out;
+  }
+  return value;
+}
+
+std::wstring ScreenPresenter::ResolvedString(
+    const config::ComponentNode& node, std::wstring_view property,
+    std::wstring_view fallback) const {
+  const json::Value* value = node.Property(property);
+  if (value == nullptr) return std::wstring(fallback);
+  std::wstring binding;
+  if (IsBindingReference(*value, &binding)) value = ResolveBinding(route_, binding);
+  return value != nullptr && value->is_string() ? value->AsString()
+                                                : std::wstring(fallback);
+}
+
+bool ScreenPresenter::ResolvedBool(const config::ComponentNode& node,
+                                   std::wstring_view property,
+                                   bool fallback) const {
+  const json::Value* value = node.Property(property);
+  if (value == nullptr) return fallback;
+  std::wstring binding;
+  if (IsBindingReference(*value, &binding)) value = ResolveBinding(route_, binding);
+  return value != nullptr && value->is_bool() ? value->AsBool() : fallback;
+}
+
+void ScreenPresenter::InvalidateBoundNodes(
+    const layout::LayoutNode& node,
+    const std::vector<std::wstring>& changed) {
+  if (node.source != nullptr) {
+    bool affected = false;
+    for (const auto& [key, value] : node.source->properties_) {
+      (void)key;
+      if (ReferencesAny(value, changed)) {
+        affected = true;
+        break;
+      }
+    }
+    if (affected) {
+      backend_->Invalidate({last_content_.x + node.bounds.x,
+                            last_content_.y + tab_strip_height_ + node.bounds.y,
+                            node.bounds.width, node.bounds.height});
+    }
+  }
+  for (const layout::LayoutNode& child : node.children) {
+    InvalidateBoundNodes(child, changed);
+  }
+}
+
+core::Status ScreenPresenter::ApplyStatePatch(std::wstring_view route,
+                                              const json::Value& patch) {
+  if (!patch.is_object()) {
+    return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                     L"route state patch must be an object");
+  }
+  json::Value* state = nullptr;
+  for (auto& [state_route, value] : route_states_) {
+    if (state_route == route) {
+      state = &value;
+      break;
+    }
+  }
+  if (state == nullptr) {
+    route_states_.emplace_back(std::wstring(route), json::Value::Object());
+    state = &route_states_.back().second;
+  }
+  std::vector<std::wstring> changed;
+  for (const auto& [key, value] : patch.members()) {
+    (void)value;
+    changed.push_back(key);
+  }
+  MergeObject(state, patch);
+  if (route == route_ && last_tree_ != nullptr) {
+    InvalidateBoundNodes(*last_tree_, changed);
+  }
+  return core::Ok();
 }
 
 }  // namespace ui::presenter

@@ -1,13 +1,13 @@
 // The JSON-to-pixels wire (#71): paints the resolved route through the
 // render seam and owns the interactive half (focus ring, Tab traversal,
-// click-to-focus). Action dispatch — what a button DOES — stays inert and
-// declared-only until the module contract (Phase 3); that decision is
-// recorded on issue #71.
+// click-to-focus). Actions leave through an injected callback; this layer
+// never depends on the module gate or module contract.
 //
 // The shell calls Paint inside its frame scope; coordinates are translated
 // so the route origin lands at the content rect's top-left.
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "render/render_backend.h"
@@ -20,6 +20,11 @@ namespace ui::presenter {
 
 class ScreenPresenter final {
  public:
+  using ActionDispatchHandler = std::function<core::Status(
+      std::wstring_view route, std::wstring_view action,
+      const json::Value& payload, json::Value* state_patch)>;
+  using RouteChangedHandler = std::function<void(std::wstring_view route)>;
+
   explicit ScreenPresenter(render::RenderBackend* backend, std::wstring theme = L"dark");
 
   // Rebuilds focus and drops layout memo for the old document; the current
@@ -43,6 +48,18 @@ class ScreenPresenter final {
   // Click-to-focus on a focusable node; true when focus moved.
   bool HandleClick(float x, float y);
 
+  void set_action_dispatch_handler(ActionDispatchHandler handler) {
+    action_dispatch_handler_ = std::move(handler);
+  }
+  void set_route_changed_handler(RouteChangedHandler handler) {
+    route_changed_handler_ = std::move(handler);
+  }
+  core::Status ApplyStatePatch(std::wstring_view route,
+                               const json::Value& patch);
+  const json::Value* ViewStateValue(std::wstring_view route,
+                                    std::wstring_view binding) const;
+  const core::Status& last_action_status() const { return last_action_status_; }
+
   // The shell reserves its caption row for dragging and the main icons;
   // the tab strip sits below it. Default 0 keeps the strip at the top.
   void set_caption_height(float height) { caption_height_ = height; }
@@ -50,6 +67,7 @@ class ScreenPresenter final {
   // True when the point (content-relative) is over interactive content —
   // the shell uses it to keep such points out of the caption drag zone.
   bool HitTestContent(float x, float y) const;
+  bool InteractiveBounds(std::wstring_view id, render::Rect* out) const;
 
   std::wstring focused() const { return focus_.Current(route_); }
 
@@ -59,8 +77,20 @@ class ScreenPresenter final {
   bool ClickNode(const layout::LayoutNode& node, float x, float y);
   const config::ComponentNode* FindButton(const layout::LayoutNode& node, float x,
                                           float y) const;
+  const layout::LayoutNode* FindNodeById(const layout::LayoutNode& node,
+                                         std::wstring_view id) const;
   int TabAt(float x, float y) const;
   render::Color Token(std::wstring_view name, render::Color fallback) const;
+  const json::Value* ResolveBinding(std::wstring_view route,
+                                    std::wstring_view binding) const;
+  json::Value ResolveTemplate(const json::Value& value) const;
+  std::wstring ResolvedString(const config::ComponentNode& node,
+                              std::wstring_view property,
+                              std::wstring_view fallback = {}) const;
+  bool ResolvedBool(const config::ComponentNode& node,
+                    std::wstring_view property, bool fallback = false) const;
+  void InvalidateBoundNodes(const layout::LayoutNode& node,
+                            const std::vector<std::wstring>& changed);
   // The style a text node is measured AND painted with; keeping the two
   // identical is what warms the painted font during layout.
   static render::TextStyle StyleForText(const config::ComponentNode& node);
@@ -82,6 +112,11 @@ class ScreenPresenter final {
   float caption_height_ = 0.0f;
   float tab_strip_height_ = 0.0f;
   layout::PaintPlan plan_;
+  std::vector<std::pair<std::wstring, json::Value>> route_states_;
+  ActionDispatchHandler action_dispatch_handler_;
+  RouteChangedHandler route_changed_handler_;
+  core::Status last_action_status_;
+  render::Rect last_content_{};
   std::wstring route_;
   std::wstring theme_;
 };

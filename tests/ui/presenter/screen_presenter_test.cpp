@@ -1,11 +1,52 @@
 #include "ui/presenter/screen_presenter.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
 #include "framework/test_case.h"
+#include "modules/gate/app_gate.h"
+#include "modules/registry/module_registry.h"
 
 namespace {
+
+class BridgeModule final : public modules::ModuleDescriptor {
+ public:
+  std::wstring_view ModuleId() const override { return L"bridge"; }
+  std::wstring_view TabLabel() const override { return L"bridge"; }
+  int Order() const override { return 1; }
+  bool ShowInTabs() const override { return true; }
+  std::wstring_view SettingsRoute() const override { return {}; }
+  std::vector<std::wstring> DeclaredActions() const override {
+    return {L"bridge:run"};
+  }
+  std::vector<std::wstring> DeclaredBindings() const override {
+    return {L"status"};
+  }
+  std::vector<std::wstring> DeclaredCapabilities() const override { return {}; }
+  core::Status Bind(modules::ModuleHost& host) override {
+    host_ = &host;
+    return core::Ok();
+  }
+  core::Status Handle(std::wstring_view action, const json::Value& payload,
+                      json::Value* patch) override {
+    if (action != L"bridge:run") {
+      return core::Err(core::ErrorCode::NotFound, L"unknown bridge action");
+    }
+    *patch = json::Value::Object();
+    patch->Set(L"status", json::Value::String(
+        L"Dispatched " + payload.StringField(L"before")));
+    return core::Ok();
+  }
+  void Release() override { host_ = nullptr; }
+
+ private:
+  modules::ModuleHost* host_ = nullptr;
+};
+
+std::unique_ptr<modules::ModuleDescriptor> MakeBridgeModule() {
+  return std::make_unique<BridgeModule>();
+}
 
 // Records call order so the z-order (backdrop before content) is assertable.
 class RecordingBackend final : public render::RenderBackend {
@@ -17,10 +58,17 @@ class RecordingBackend final : public render::RenderBackend {
   void BeginFrame(const render::Rect&) override {}
   void EndFrame() override {}
   void Present(void*) override {}
-  void Invalidate(const render::Rect&) override {}
-  void InvalidateAll() override {}
-  bool HasInvalidation() const override { return false; }
-  bool TakeInvalidation(render::Rect&) override { return false; }
+  void Invalidate(const render::Rect& rect) override { invalidations.push_back(rect); }
+  void InvalidateAll() override { invalidated_all = true; }
+  bool HasInvalidation() const override {
+    return !invalidations.empty() || invalidated_all;
+  }
+  bool TakeInvalidation(render::Rect& rect) override {
+    if (invalidations.empty()) return false;
+    rect = invalidations.front();
+    invalidations.erase(invalidations.begin());
+    return true;
+  }
   render::ImageHandle LoadImageFile(std::wstring_view) override {
     return render::ImageHandle::Invalid;
   }
@@ -57,6 +105,8 @@ class RecordingBackend final : public render::RenderBackend {
   std::vector<std::wstring> calls;
   std::vector<std::pair<render::Rect, render::Color>> fills;
   std::vector<std::pair<render::Rect, render::Color>> strokes;
+  std::vector<render::Rect> invalidations;
+  bool invalidated_all = false;
 };
 
 std::wstring W(const char* utf8) {
@@ -81,12 +131,15 @@ const char* kCore = R"({
   "components": {
     "screen": { "properties": {
       "route_id": { "kind": "string", "required": true },
+      "module_id": { "kind": "string" },
       "backdrop": { "kind": "string" } } },
     "container": { "properties": { "gap": { "kind": "int", "default": 8 } } },
     "text": { "properties": { "text": { "kind": "text", "required": true } } },
     "button": { "properties": {
       "label": { "kind": "text", "required": true },
       "selected": { "kind": "binding" },
+      "action": { "kind": "string" },
+      "action_payload": { "kind": "object" },
       "tab_stop": { "kind": "bool", "default": true } } }
   }
 })";
@@ -276,4 +329,128 @@ DHEPZ_TEST(ScreenPresenter, RouteSwitchChangesTheDrawSet) {
     if (call == L"text:second") saw_second = true;
   }
   DHEPZ_CHECK(saw_second);
+}
+
+DHEPZ_TEST(ScreenPresenter, ActionPayloadResolvesAndImmediatePatchUpdatesBoundText) {
+  RecordingBackend backend;
+  json::Value core;
+  DHEPZ_CHECK(json::Parse(W(kCore), &core).ok());
+  std::vector<ui::config::Diagnostic> diagnostics;
+  std::unique_ptr<ui::config::ResolvedUiDocument> document;
+  DHEPZ_CHECK(ui::config::ResolveDocument(
+                  core,
+                  {{L"embedded", W(R"({ "components": [
+                    { "type": "screen", "route_id": "home", "children": [
+                      { "type": "button", "id": "go",
+                        "label": { "$bind": "label" },
+                        "action": "demo:go",
+                        "action_payload": {
+                          "literal": 7,
+                          "folder": { "$bind": "folder" },
+                          "nested": [true, { "$bind": "label" }] }
+                      }
+                    ] }
+                  ] })")}},
+                  &diagnostics, &document).ok());
+
+  ui::presenter::ScreenPresenter presenter(&backend);
+  presenter.SetDocument(document.get());
+  json::Value initial = json::Value::Object();
+  initial.Set(L"label", json::Value::String(L"Open"));
+  initial.Set(L"folder", json::Value::String(L"C:\\work"));
+  DHEPZ_CHECK(presenter.ApplyStatePatch(L"home", initial).ok());
+
+  json::Value captured;
+  presenter.set_action_dispatch_handler(
+      [&](std::wstring_view route, std::wstring_view action,
+          const json::Value& payload, json::Value* state_patch) {
+        DHEPZ_CHECK_EQ(std::wstring(route), std::wstring(L"home"));
+        DHEPZ_CHECK_EQ(std::wstring(action), std::wstring(L"demo:go"));
+        captured = payload;
+        *state_patch = json::Value::Object();
+        state_patch->Set(L"label", json::Value::String(L"Opened"));
+        return core::Ok();
+      });
+  presenter.Prepare({10.0f, 20.0f, 400.0f, 300.0f});
+  backend.invalidations.clear();
+  backend.invalidated_all = false;
+  DHEPZ_CHECK(presenter.HandleClick(50.0f, 48.0f));
+
+  DHEPZ_CHECK_EQ(captured.NumberField(L"literal"), 7.0);
+  DHEPZ_CHECK_EQ(captured.StringField(L"folder"), std::wstring(L"C:\\work"));
+  DHEPZ_CHECK_EQ(captured.ArrayField(L"nested")->items()[1].AsString(),
+                 std::wstring(L"Open"));
+  DHEPZ_CHECK_EQ(presenter.ViewStateValue(L"home", L"label")->AsString(),
+                 std::wstring(L"Opened"));
+  DHEPZ_CHECK_EQ(backend.invalidations.size(), static_cast<std::size_t>(1));
+  DHEPZ_CHECK_FALSE(backend.invalidated_all);
+}
+
+DHEPZ_TEST(ScreenPresenter, AsyncPatchInvalidatesOnlyBoundNode) {
+  RecordingBackend backend;
+  json::Value core;
+  DHEPZ_CHECK(json::Parse(W(kCore), &core).ok());
+  std::vector<ui::config::Diagnostic> diagnostics;
+  std::unique_ptr<ui::config::ResolvedUiDocument> document;
+  DHEPZ_CHECK(ui::config::ResolveDocument(
+                  core,
+                  {{L"embedded", W(R"({ "components": [
+                    { "type": "screen", "route_id": "home", "children": [
+                      { "type": "text", "text": "static" },
+                      { "type": "button", "label": { "$bind": "status" } }
+                    ] }
+                  ] })")}},
+                  &diagnostics, &document).ok());
+  ui::presenter::ScreenPresenter presenter(&backend);
+  presenter.SetDocument(document.get());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  backend.invalidated_all = false;
+
+  json::Value patch = json::Value::Object();
+  patch.Set(L"status", json::Value::String(L"done"));
+  DHEPZ_CHECK(presenter.ApplyStatePatch(L"home", patch).ok());
+  DHEPZ_CHECK_EQ(backend.invalidations.size(), static_cast<std::size_t>(1));
+  DHEPZ_CHECK(backend.invalidations[0].height < 300.0f);
+  DHEPZ_CHECK_FALSE(backend.invalidated_all);
+}
+
+DHEPZ_TEST(ScreenPresenter, SyntheticClickTravelsThroughGateAndModulePatch) {
+  modules::ResetRegistryForTests();
+  modules::RegisterModule(L"bridge", &MakeBridgeModule);
+  const std::wstring embedded =
+      L"{ \"core\": " + W(kCore) +
+      L", \"components\": ["
+      L"{ \"type\": \"screen\", \"route_id\": \"bridge\", "
+      L"\"module_id\": \"bridge\", \"children\": ["
+      L"{ \"type\": \"button\", \"id\": \"run\", "
+      L"\"label\": { \"$bind\": \"status\" }, \"action\": \"bridge:run\", "
+      L"\"action_payload\": { \"before\": { \"$bind\": \"status\" } } } ] }"
+      L"], \"modules\": ["
+      L"{ \"moduleId\": \"bridge\", \"tabLabel\": \"bridge\", "
+      L"\"order\": 1, \"showInTabs\": true, "
+      L"\"actions\": [\"bridge:run\"], \"bindings\": [\"status\"], "
+      L"\"capabilities\": [] } ] }";
+  modules::AppGate gate;
+  DHEPZ_CHECK(gate.StartWithEmbedded(embedded).ok());
+  DHEPZ_CHECK(gate.Mounted(L"bridge"));
+
+  RecordingBackend backend;
+  ui::presenter::ScreenPresenter presenter(&backend);
+  presenter.SetDocument(gate.document());
+  json::Value initial = json::Value::Object();
+  initial.Set(L"status", json::Value::String(L"Ready"));
+  DHEPZ_CHECK(presenter.ApplyStatePatch(L"bridge", initial).ok());
+  presenter.set_action_dispatch_handler(
+      [&](std::wstring_view route, std::wstring_view action,
+          const json::Value& payload, json::Value* state_patch) {
+        DHEPZ_RETURN_IF_ERROR(gate.Activate(route));
+        return gate.Dispatch(action, payload, state_patch);
+      });
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  DHEPZ_CHECK(presenter.HandleClick(50.0f, 48.0f));
+  DHEPZ_CHECK_EQ(presenter.ViewStateValue(L"bridge", L"status")->AsString(),
+                 std::wstring(L"Dispatched Ready"));
+  DHEPZ_CHECK_EQ(gate.Diagnostics().statuses.size(), static_cast<std::size_t>(1));
+  DHEPZ_CHECK(gate.Diagnostics().statuses[0].ok);
+  modules::ResetRegistryForTests();
 }
