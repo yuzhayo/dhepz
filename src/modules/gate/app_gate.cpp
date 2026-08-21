@@ -6,6 +6,7 @@
 
 #include "core/json.h"
 #include "modules/registry/module_registry.h"
+#include "platform/process.h"
 #include "ui/config/config_store.h"
 
 namespace modules {
@@ -68,9 +69,15 @@ class GateHost final : public ModuleHost {
     return core::Ok();
   }
 
-  core::Status ProcessRun(std::wstring_view, std::wstring*) override {
-    // Worker offload lands with the terminal module (Phase 4).
-    return core::Err(core::ErrorCode::Unsupported, L"process launch not wired yet");
+  core::Status ProcessRun(std::wstring_view command_line, std::wstring* captured) override {
+    process::RunResult result;
+    const core::Status status = process::RunCapture(command_line, L"", 10000, &result);
+    if (!status.ok()) return status;
+    if (result.timed_out) {
+      return core::Err(core::ErrorCode::Cancelled, L"process timed out");
+    }
+    if (captured != nullptr) *captured = result.output;
+    return core::Ok();
   }
 
   void ReportStatus(const core::Status& status) override { last_status_ = status; }

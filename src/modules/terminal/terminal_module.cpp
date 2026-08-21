@@ -1,9 +1,10 @@
-// Self-registering logic half of the terminal module (P4-01). The real
-// launch path lands in P4-02; until then terminal:launch reports
-// Unsupported so a missing implementation can never masquerade as success.
+// Self-registering logic half of the terminal module. terminal:launch opens
+// an external console (P4-02); RunCapture-based flows (WSL enumeration etc.)
+// land with worker offload (P4-05).
 #include "modules/contract/module_contract.h"
 #include "modules/registry/module_registry.h"
 #include "modules/terminal/terminal_logic.h"
+#include "platform/process.h"
 
 #include <memory>
 
@@ -30,9 +31,9 @@ class TerminalModule final : public modules::ModuleDescriptor {
     if (action != L"terminal:launch") {
       return core::Err(core::ErrorCode::NotFound, L"terminal: unknown action");
     }
-    // P4-02 wires ProcessRun; until then refuse loudly-but-gracefully.
-    return core::Err(core::ErrorCode::Unsupported,
-                     L"terminal:launch lands with P4-02 process launch");
+    LaunchSpec spec;
+    const std::wstring command = BuildCommandLine(spec);
+    return process::Launch(L"", command, spec.working_dir, process::WindowMode::NewConsole);
   }
 
   void Release() override { host_ = nullptr; }
