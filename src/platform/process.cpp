@@ -130,7 +130,8 @@ core::Status ShellLaunch(std::wstring_view verb, std::wstring_view file,
 }
 
 core::Status RunCapture(std::wstring_view command_line, std::wstring_view working_dir,
-                        unsigned long timeout_ms, RunResult* out) {
+                        unsigned long timeout_ms, RunResult* out,
+                        const std::atomic<bool>* cancelled) {
   if (out != nullptr) *out = RunResult{};
 
   SECURITY_ATTRIBUTES sa{};
@@ -175,7 +176,12 @@ core::Status RunCapture(std::wstring_view command_line, std::wstring_view workin
   std::string raw;
   char buffer[4096];
   bool timed_out = false;
+  bool was_cancelled = false;
   for (;;) {
+    if (cancelled != nullptr && cancelled->load()) {
+      was_cancelled = true;
+      break;
+    }
     DWORD available = 0;
     if (!PeekNamedPipe(read_end, nullptr, 0, nullptr, &available, nullptr)) break;
     if (available > 0) {
@@ -200,13 +206,16 @@ core::Status RunCapture(std::wstring_view command_line, std::wstring_view workin
   }
   CloseHandle(read_end);
 
-  if (timed_out) {
+  if (timed_out || was_cancelled) {
     TerminateProcess(pi.hProcess, 1);
     WaitForSingleObject(pi.hProcess, 2000);
     CloseHandle(pi.hProcess);
     if (out != nullptr) {
-      out->timed_out = true;
+      out->timed_out = timed_out;
       out->output = DecodeOutput(raw);
+    }
+    if (was_cancelled) {
+      return core::Err(core::ErrorCode::Cancelled, L"Process capture cancelled");
     }
     return core::Ok();
   }

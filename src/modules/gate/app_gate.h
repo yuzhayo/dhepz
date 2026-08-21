@@ -16,6 +16,7 @@
 
 #include "modules/contract/module_contract.h"
 #include "modules/contract/module_manifest.h"
+#include "modules/gate/gate_host.h"
 #include "ui/config/resolved_ui_document.h"
 
 namespace modules {
@@ -29,8 +30,6 @@ struct RejectEntry {
 // this; there is exactly one gate (single choke point).
 const std::vector<RejectEntry>& CurrentRejects();
 
-class GateHost;
-
 class AppGate final {
  public:
   AppGate();
@@ -43,6 +42,11 @@ class AppGate final {
   // Test path: explicit texts.
   core::Status StartWithEmbedded(std::wstring_view embedded_text,
                                  std::wstring_view override_text = {});
+
+  // Must be configured before Start. The window procedure routes the supplied
+  // completion message to worker::Worker::Settle.
+  core::Status ConfigureHostOperations(void* ui_window, unsigned int completion_message,
+                                       HostStatePatchHandler state_patch_handler);
 
   const ui::config::ResolvedUiDocument* document() const { return document_.get(); }
   std::vector<PeerInfo> Peers() const;
@@ -75,6 +79,9 @@ class AppGate final {
   std::vector<RejectEntry> rejects_;
   std::vector<std::pair<std::wstring, std::wstring>> action_map_;  // action -> moduleId
   std::wstring current_route_;
+  void* operation_window_ = nullptr;
+  unsigned int operation_message_ = 0;
+  HostStatePatchHandler state_patch_handler_;
 };
 
 }  // namespace modules
