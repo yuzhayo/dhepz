@@ -1,9 +1,0 @@
-{
-  "moduleId": "fixture-healthy",
-  "tabLabel": "Fixture Healthy",
-  "order": 500,
-  "showInTabs": false,
-  "actions": ["fixture-launch"],
-  "bindings": [],
-  "capabilities": []
-}

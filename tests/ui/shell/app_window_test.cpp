@@ -301,22 +301,22 @@ DHEPZ_TEST(AppWindow, SettingsButtonAppearsOnlyWithHandler) {
   const HWND hwnd = static_cast<HWND>(window.hwnd());
 
   // Client geometry at 96 DPI: margin 24, content_right 984, button 46 px.
-  // Left-to-right: pin, [settings], close.
+  // Order left-to-right: pin, [settings], min, max, close.
   bool opened = false;
-  // No handler: two buttons; the pin occupies x 892..938 and there is no
-  // gear — its future slot is plain caption, clicking it does nothing.
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(700, 40));
+  // No handler: four buttons, the pin occupies x 800..846; the future gear
+  // slot (x 754..800) is plain caption — clicking it does nothing.
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(770, 40));
   DHEPZ_CHECK_FALSE(opened);
   DHEPZ_CHECK_FALSE(window.pinned());
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(900, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
   DHEPZ_CHECK(window.pinned());
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(900, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
   DHEPZ_CHECK_FALSE(window.pinned());
 
   window.set_settings_handler([&opened] { opened = true; });
-  // The gear now takes x 892..938 and the pin shifts left to 846..892.
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(910, 40));
+  // The gear now takes x 800..846 and the pin shifts left to 754..800.
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
   DHEPZ_CHECK(opened);
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(860, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(770, 40));
   DHEPZ_CHECK(window.pinned());
 }

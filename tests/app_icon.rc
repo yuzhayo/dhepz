@@ -5,10 +5,3 @@
 // The test binary embeds the same icon so the resource-level assertions in
 // app_icon_test.cpp run against a real compiled icon, not a file read.
 IDI_APP_ICON ICON "..\\assets\\app.ico"
-
-// Compiled-resource seam for AppGate startup/override integration tests.
-APP_GATE_TEST_UI RCDATA "fixtures\\app_gate_embedded.json"
-APP_GATE_CHECKPOINT_UI RCDATA "fixtures\\checkpoint_embedded.json"
-
-// Production composition uses the application's exact named resource path.
-EMBEDDED_UI RCDATA "..\\build\\generated\\embedded_ui.tests.json"

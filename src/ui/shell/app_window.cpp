@@ -31,29 +31,39 @@ constexpr render::Color kHoverNeutral{255, 255, 255, 26};
 constexpr render::Color kHoverClose{232, 17, 35, 255};
 constexpr render::Color kShadow{0, 0, 0, 255};
 
-// Caption icons all come from Segoe MDL2 Assets, like pin and gear: the
-// close button is ChromeClose, not a Marlett glyph.
-constexpr wchar_t kPinGlyphUnpinned = 0xE718;  // horizontal pin outline
-constexpr wchar_t kPinGlyphPinned = 0xE840;    // diagonal pushpin
-constexpr wchar_t kGearGlyph = 0xE713;         // Settings
-constexpr wchar_t kCloseGlyph = 0xE8BB;        // ChromeClose
-
-render::TextStyle IconStyle(float size_px) {
+render::TextStyle CaptionStyle() {
   render::TextStyle style;
-  style.family = L"Segoe MDL2 Assets";
-  style.size_px = size_px;
+  style.family = L"Segoe UI";
+  style.size_px = 13.0f;
+  style.weight = render::FontWeight::Semibold;
   return style;
 }
 
-// MDL2 glyphs render at different visual sizes per codepoint; tuned so the
-// row reads even: horizontal pin 22, diagonal pin 19, gear 16, close 14.
-constexpr float kPinUnpinnedSize = 22.0f;
-constexpr float kPinPinnedSize = 19.0f;
-constexpr float kGearSize = 16.0f;
-constexpr float kCloseSize = 14.0f;
+render::TextStyle GlyphStyle() {
+  render::TextStyle style;
+  style.family = L"Marlett";
+  style.size_px = 11.0f;
+  return style;
+}
 
-// MDL2 glyphs centre slightly low at these sizes; nudge them onto the row.
+// Verified by rendering the font on the target machine; the pair is the
+// user's visual choice: unpinned is the horizontal pin outline (E718),
+// pinned the diagonal pushpin (E840). E713 is the settings gear.
+constexpr wchar_t kPinGlyphUnpinned = 0xE718;  // horizontal pin outline
+constexpr wchar_t kPinGlyphPinned = 0xE840;    // diagonal pushpin
+constexpr wchar_t kGearGlyph = 0xE713;         // Settings
+
+render::TextStyle IconStyle() {
+  render::TextStyle style;
+  style.family = L"Segoe MDL2 Assets";
+  style.size_px = 14.0f;
+  return style;
+}
+
+// Marlett and Segoe MDL2 Assets centre their glyphs differently; the nudges
+// put both families on one visual row (verified against a rendered strip).
 constexpr float kIconNudgeY = 2.0f;
+constexpr float kMarlettNudgeY = -2.0f;
 
 }  // namespace
 
@@ -88,6 +98,8 @@ bool AppWindow::Create(void* instance, float content_width, float content_height
   if (hwnd_ == nullptr) {
     return false;
   }
+  restored_width_px_ = width;
+  restored_height_px_ = height;
 
   drain_message_ = RegisterWindowMessageW(L"dhepz.signal.drain");
   signals_ = std::make_unique<platform::SignalFanout>(
@@ -125,51 +137,18 @@ void AppWindow::set_content_painter(
   content_painter_ = std::move(painter);
 }
 
-void AppWindow::set_content_layout(std::function<void(const render::Rect&)> layout) {
-  content_layout_ = std::move(layout);
-}
-
 void AppWindow::set_content_key_handler(std::function<bool(int)> handler) {
   content_key_handler_ = std::move(handler);
-}
-
-void AppWindow::set_content_text_handler(std::function<bool(wchar_t)> handler) {
-  content_text_handler_ = std::move(handler);
 }
 
 void AppWindow::set_content_click_handler(std::function<bool(float, float)> handler) {
   content_click_handler_ = std::move(handler);
 }
 
-void AppWindow::set_content_move_handler(std::function<bool(float, float)> handler) {
-  content_move_handler_ = std::move(handler);
-}
-
-void AppWindow::set_content_down_handler(std::function<bool(float, float)> handler) {
-  content_down_handler_ = std::move(handler);
-}
-
-void AppWindow::set_content_hittest_handler(std::function<bool(float, float)> handler) {
-  content_hittest_handler_ = std::move(handler);
-}
-
-void AppWindow::set_visibility_handler(std::function<void(bool)> handler) {
-  visibility_handler_ = std::move(handler);
-}
-
-void AppWindow::set_frame_presented_handler(std::function<void()> handler) {
-  frame_presented_handler_ = std::move(handler);
-}
-
-void AppWindow::set_message_handler(
-    std::function<bool(unsigned int, unsigned long long, long long)> handler) {
-  message_handler_ = std::move(handler);
-}
-
 int AppWindow::ButtonCount() const {
-  // Left-to-right: pin, [settings], close. Minimise/maximise arrive later
-  // as a user toggle; the window is already resizable.
-  return settings_handler_ ? 3 : 2;
+  // Left-to-right: pin, [settings], min, max/restore, close. The gear only
+  // exists while something can open — no dead button.
+  return settings_handler_ ? 5 : 4;
 }
 
 void AppWindow::Show() {
@@ -182,7 +161,6 @@ void AppWindow::Show() {
   GetClientRect(window, &client);
   OnResized(client.right, client.bottom);
   ShowWindow(window, SW_SHOW);
-  if (visibility_handler_) visibility_handler_(true);
 }
 
 void AppWindow::Hide() {
@@ -191,17 +169,12 @@ void AppWindow::Hide() {
   ShowWindow(window, SW_HIDE);
   // The buffer is the one large allocation and scales with window size.
   backend_.ReleaseSurface();
-  if (visibility_handler_) visibility_handler_(false);
 }
 
 void AppWindow::Close() {
   // Resident semantics: closing the window returns to the tray, it does not
   // exit the process. Exit belongs to the tray menu.
   Hide();
-}
-
-void AppWindow::Repaint() {
-  if (visible()) RenderFullFrame();
 }
 
 void AppWindow::TogglePin() {
@@ -254,7 +227,7 @@ int AppWindow::ButtonAt(int x_px, int y_px) const {
   if (hwnd_ == nullptr) return -1;
   RECT client{};
   GetClientRect(static_cast<HWND>(hwnd_), &client);
-  const int margin = maximized() ? 0 : Px(kShadowMargin);
+  const int margin = maximized_ ? 0 : Px(kShadowMargin);
   const int content_left = margin;
   const int content_right = client.right - margin;
   const int caption_bottom = margin + Px(kCaptionHeight);
@@ -275,7 +248,7 @@ int AppWindow::HitTest(int x_px, int y_px) const {
   RECT client{};
   GetClientRect(static_cast<HWND>(hwnd_), &client);
 
-  const int margin = maximized() ? 0 : Px(kShadowMargin);
+  const int margin = maximized_ ? 0 : Px(kShadowMargin);
   const int content_left = margin;
   const int content_top = margin;
   const int content_right = client.right - margin;
@@ -293,7 +266,7 @@ int AppWindow::HitTest(int x_px, int y_px) const {
   const bool top = y_px < content_top + border;
   const bool bottom = y_px >= content_bottom - border;
 
-  if (!maximized()) {
+  if (!maximized_) {
     if (top && left) return HTTOPLEFT;
     if (top && right) return HTTOPRIGHT;
     if (bottom && left) return HTBOTTOMLEFT;
@@ -305,13 +278,7 @@ int AppWindow::HitTest(int x_px, int y_px) const {
   }
 
   if (ButtonAt(x_px, y_px) >= 0) return HTCLIENT;
-  if (y_px < content_top + Px(kCaptionHeight)) {
-    if (content_hittest_handler_ &&
-        content_hittest_handler_(Logical(x_px - margin), Logical(y_px - margin))) {
-      return HTCLIENT;
-    }
-    return HTCAPTION;
-  }
+  if (y_px < content_top + Px(kCaptionHeight)) return HTCAPTION;
   return HTCLIENT;
 }
 
@@ -320,11 +287,15 @@ void AppWindow::RenderFullFrame() {
 
   // Warm the fonts OUTSIDE the frame: creation inside a paint scope is
   // refused by design.
-  backend_.MeasureText(std::wstring(1, kPinGlyphUnpinned), IconStyle(kPinUnpinnedSize), 0.0f);
-  backend_.MeasureText(std::wstring(1, kPinGlyphPinned), IconStyle(kPinPinnedSize), 0.0f);
-  backend_.MeasureText(std::wstring(1, kCloseGlyph), IconStyle(kCloseSize), 0.0f);
+  const render::TextStyle caption = CaptionStyle();
+  const render::TextStyle glyph = GlyphStyle();
+  const render::TextStyle icon = IconStyle();
+  backend_.MeasureText(title_, caption, 0.0f);
+  backend_.MeasureText(L"0", glyph, 0.0f);
+  backend_.MeasureText(std::wstring(1, kPinGlyphUnpinned), icon, 0.0f);
+  backend_.MeasureText(std::wstring(1, kPinGlyphPinned), icon, 0.0f);
   if (settings_handler_) {
-    backend_.MeasureText(std::wstring(1, kGearGlyph), IconStyle(kGearSize), 0.0f);
+    backend_.MeasureText(std::wstring(1, kGearGlyph), icon, 0.0f);
   }
 
   render::Rect dirty{};
@@ -332,17 +303,10 @@ void AppWindow::RenderFullFrame() {
     backend_.InvalidateAll();
     backend_.TakeInvalidation(dirty);
   }
-  if (content_layout_) {
-    const float width = backend_.surface_size().width;
-    const float height = backend_.surface_size().height;
-    const float margin = maximized() ? 0.0f : kShadowMargin;
-    content_layout_({margin, margin, width - margin * 2, height - margin * 2});
-  }
   backend_.BeginFrame(dirty);
   PaintContent();
   backend_.EndFrame();
   backend_.PresentLayered(hwnd_);
-  if (frame_presented_handler_) frame_presented_handler_();
 }
 
 void AppWindow::PaintContent() {
@@ -350,13 +314,13 @@ void AppWindow::PaintContent() {
 
   const float width = backend_.surface_size().width;
   const float height = backend_.surface_size().height;
-  const float margin = maximized() ? 0.0f : kShadowMargin;
-  const float radius = maximized() ? 0.0f : kCornerRadius;
+  const float margin = maximized_ ? 0.0f : kShadowMargin;
+  const float radius = maximized_ ? 0.0f : kCornerRadius;
   const render::Rect content{margin, margin, width - margin * 2, height - margin * 2};
 
   // Soft shadow: three rounded bands under the content, lightest and
   // largest first. Alpha-blended over the transparent buffer.
-  if (!maximized()) {
+  if (!maximized_) {
     const float spreads[3] = {kShadowMargin, kShadowMargin * 2.0f / 3.0f, kShadowMargin / 3.0f};
     const std::uint8_t alphas[3] = {22, 40, 62};
     for (int i = 0; i < 3; ++i) {
@@ -373,31 +337,47 @@ void AppWindow::PaintContent() {
   backend_.FillRoundedRect(content, render::CornerRadius::Uniform(radius), kBackground);
   backend_.StrokeRoundedRect(content, render::CornerRadius::Uniform(radius), kBorder, 1.0f);
 
-  // Caption: window buttons right. The title is not drawn inside the frame —
-  // it lives in the window title (taskbar/Alt-Tab); drawing it here stacked
-  // on top of content.
+  // Caption: title left, window buttons right.
   const render::Rect caption{content.x, content.y, content.width, kCaptionHeight};
   const int count = ButtonCount();
+  const float buttons_width = kButtonWidth * count;
+  const float title_width = content.width - buttons_width - 28.0f;
+  if (title_width > 0.0f) {
+    backend_.DrawTextRun(title_, {caption.x + 14.0f, caption.y, title_width, caption.height},
+                         CaptionStyle(), kCaptionText, render::TextAlign::Left,
+                         render::VerticalAlign::Middle);
+  }
 
+  const render::TextStyle glyph = GlyphStyle();
+  const render::TextStyle icon = IconStyle();
+  const wchar_t* marlett[3] = {L"0", maximized_ ? L"2" : L"1", L"r"};  // min, max, close
   for (int i = 0; i < count; ++i) {
-    // Left-to-right: 0 pin, 1 settings (when present), last close.
-    const bool is_close = i == count - 1;
-    const bool is_pin = i == 0;
+    // Role by distance from the right edge: 0 close, 1 max, 2 min, then the
+    // left slots: settings (only with a handler) and pin leftmost.
+    const int role = (count - 1) - i;
+    const bool is_pin = role == 4 || (role == 3 && !settings_handler_);
+    const bool is_gear = role == 3 && settings_handler_;
     const render::Rect button{caption.right() - (count - i) * kButtonWidth, caption.y,
                               kButtonWidth, kCaptionHeight};
     if (hover_button_ == i) {
-      backend_.FillRect(button, is_close ? kHoverClose : kHoverNeutral);
+      backend_.FillRect(button, role == 0 ? kHoverClose : kHoverNeutral);
     }
-    const wchar_t glyph = is_pin ? (pinned_ ? kPinGlyphPinned : kPinGlyphUnpinned)
-                        : is_close ? kCloseGlyph
-                                   : kGearGlyph;
-    const float size = is_pin ? (pinned_ ? kPinPinnedSize : kPinUnpinnedSize)
-                      : is_close ? kCloseSize
-                                 : kGearSize;
-    backend_.DrawTextRun(std::wstring(1, glyph),
-                         {button.x, button.y + kIconNudgeY, button.width, button.height},
-                         IconStyle(size), kCaptionText,
-                         render::TextAlign::Center, render::VerticalAlign::Middle);
+    if (is_pin) {
+      backend_.DrawTextRun(std::wstring(1, pinned_ ? kPinGlyphPinned : kPinGlyphUnpinned),
+                           {button.x, button.y + kIconNudgeY, button.width, button.height}, icon,
+                           kCaptionText, render::TextAlign::Center,
+                           render::VerticalAlign::Middle);
+    } else if (is_gear) {
+      backend_.DrawTextRun(std::wstring(1, kGearGlyph),
+                           {button.x, button.y + kIconNudgeY, button.width, button.height}, icon,
+                           kCaptionText, render::TextAlign::Center,
+                           render::VerticalAlign::Middle);
+    } else {
+      backend_.DrawTextRun(marlett[2 - role],
+                           {button.x, button.y + kMarlettNudgeY, button.width, button.height},
+                           glyph, kCaptionText, render::TextAlign::Center,
+                           render::VerticalAlign::Middle);
+    }
   }
 
   if (content_painter_) {
@@ -405,8 +385,30 @@ void AppWindow::PaintContent() {
   }
 }
 
-bool AppWindow::maximized() const {
-  return hwnd_ != nullptr && IsZoomed(static_cast<HWND>(hwnd_)) != 0;
+void AppWindow::SetMaximized(bool maximize) {
+  if (hwnd_ == nullptr || maximize == maximized_) return;
+  const HWND window = static_cast<HWND>(hwnd_);
+  maximized_ = maximize;
+  if (maximize) {
+    RECT client{};
+    GetClientRect(window, &client);
+    restored_width_px_ = client.right;
+    restored_height_px_ = client.bottom;
+    const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    if (GetMonitorInfoW(monitor, &info)) {
+      SetWindowPos(window, nullptr, info.rcWork.left, info.rcWork.top,
+                   info.rcWork.right - info.rcWork.left, info.rcWork.bottom - info.rcWork.top,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+  } else {
+    SetWindowPos(window, nullptr, 0, 0, restored_width_px_, restored_height_px_,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  }
+  RECT client{};
+  GetClientRect(window, &client);
+  OnResized(client.right, client.bottom);
 }
 
 long long __stdcall AppWindow::WindowProc(void* window, unsigned int message,
@@ -435,7 +437,6 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
     settle_timer_->OnTimer();
     return 0;
   }
-  if (message_handler_ && message_handler_(message, wparam, lparam)) return 0;
   switch (message) {
     case WM_THEMECHANGED:
     case WM_DWMCOLORIZATIONCOLORCHANGED:
@@ -467,7 +468,6 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       if (IsIconic(window)) {
         // Minimised is hidden for budget purposes: the buffer goes away too.
         backend_.ReleaseSurface();
-        if (visibility_handler_) visibility_handler_(false);
         return 0;
       }
       // The buffer exists only while visible: Show() renders it before
@@ -491,14 +491,6 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
           RenderFullFrame();
         }
       }
-      if (button < 0 && content_move_handler_) {
-        const int margin = maximized() ? 0 : Px(kShadowMargin);
-        if (content_move_handler_(Logical(GET_X_LPARAM(lparam) - margin),
-                                  Logical(GET_Y_LPARAM(lparam) - margin)) &&
-            visible()) {
-          RenderFullFrame();
-        }
-      }
       TRACKMOUSEEVENT tracking{};
       tracking.cbSize = sizeof(tracking);
       tracking.dwFlags = TME_LEAVE;
@@ -513,29 +505,14 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
           RenderFullFrame();
         }
       }
-      if (content_move_handler_ && content_move_handler_(-1.0f, -1.0f) && visible()) {
-        RenderFullFrame();
-      }
       return 0;
-    case WM_LBUTTONDOWN: {
-      const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
-      if (button < 0 && content_down_handler_) {
-        const int margin = maximized() ? 0 : Px(kShadowMargin);
-        if (content_down_handler_(Logical(GET_X_LPARAM(lparam) - margin),
-                                  Logical(GET_Y_LPARAM(lparam) - margin)) &&
-            visible()) {
-          RenderFullFrame();
-        }
-      }
-      return 0;
-    }
     case WM_LBUTTONUP: {
       const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
       if (button < 0) {
         if (content_click_handler_) {
           const int x_px = GET_X_LPARAM(lparam);
           const int y_px = GET_Y_LPARAM(lparam);
-          const int margin = maximized() ? 0 : Px(kShadowMargin);
+          const int margin = maximized_ ? 0 : Px(kShadowMargin);
           RECT client{};
           GetClientRect(window, &client);
           if (x_px >= margin && y_px >= margin && x_px < client.right - margin &&
@@ -547,12 +524,17 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
         }
         return 0;
       }
-      // Left-to-right: 0 pin, 1 settings (when present), last close.
-      if (button == 0) {
-        TogglePin();
-      } else if (button == ButtonCount() - 1) {
+      const int role = (ButtonCount() - 1) - button;  // 0 close … leftmost pin
+      const bool is_pin = role == 4 || (role == 3 && !settings_handler_);
+      if (role == 0) {
         Close();
-      } else if (settings_handler_) {
+      } else if (role == 1) {
+        SetMaximized(!maximized_);
+      } else if (role == 2) {
+        ShowWindow(window, SW_MINIMIZE);
+      } else if (is_pin) {
+        TogglePin();
+      } else if (role == 3 && settings_handler_) {
         settings_handler_();
       }
       return 0;
@@ -565,20 +547,11 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       return DefWindowProcW(window, message, static_cast<WPARAM>(wparam),
                             static_cast<LPARAM>(lparam));
     }
-    case WM_CHAR: {
-      if (content_text_handler_ &&
-          content_text_handler_(static_cast<wchar_t>(wparam))) {
-        RenderFullFrame();
-        return 0;
-      }
-      return DefWindowProcW(window, message, static_cast<WPARAM>(wparam),
-                            static_cast<LPARAM>(lparam));
-    }
     case WM_GETMINMAXINFO: {
       const LRESULT result =
           DefWindowProcW(window, message, static_cast<WPARAM>(wparam), static_cast<LPARAM>(lparam));
       auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
-      const int margin = maximized() ? 0 : Px(kShadowMargin) * 2;
+      const int margin = maximized_ ? 0 : Px(kShadowMargin) * 2;
       info->ptMinTrackSize.x = Px(320.0f) + margin;
       info->ptMinTrackSize.y = Px(200.0f) + margin;
       return result;

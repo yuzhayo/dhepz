@@ -18,8 +18,6 @@
 // Like all of platform/, this layer keeps windows.h out of the header.
 #pragma once
 
-#include <functional>
-
 namespace trace {
 class PerformanceTraceSession;
 }
@@ -56,9 +54,6 @@ class TrayProcess final {
   // shell refuses (a headless session): the process stays up without a tray.
   bool InstallTray() noexcept;
 
-  // Requests that the parent composition owner show its main window.
-  void set_activate_handler(std::function<void()> handler);
-
   // Blocks in GetMessageW until Exit. No timers, no polling, no idle work.
   int Run() noexcept;
 
@@ -84,7 +79,6 @@ class TrayProcess final {
   void* window_ = nullptr;
   unsigned int taskbar_created_message_ = 0;
   bool tray_icon_added_ = false;
-  std::function<void()> activate_handler_;
 };
 
 }  // namespace tray

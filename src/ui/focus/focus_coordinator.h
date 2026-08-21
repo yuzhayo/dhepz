@@ -26,9 +26,6 @@ class FocusCoordinator final {
   // The node a focusable id refers to; nullptr for unknown ids.
   const config::ComponentNode* NodeFor(std::wstring_view route, std::wstring_view id) const;
 
-  // The focusable id a node owns; empty when the node is not focusable.
-  std::wstring IdFor(std::wstring_view route, const config::ComponentNode* node) const;
-
   // Current owner; empty when the route has nothing focusable or has not
   // been entered.
   std::wstring Current(std::wstring_view route) const;
