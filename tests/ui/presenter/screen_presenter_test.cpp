@@ -140,6 +140,19 @@ const char* kCore = R"({
       "selected": { "kind": "binding" },
       "action": { "kind": "string" },
       "action_payload": { "kind": "object" },
+      "tab_stop": { "kind": "bool", "default": true } } },
+    "input": { "properties": {
+      "value_binding": { "kind": "binding" },
+      "placeholder": { "kind": "string" },
+      "tab_stop": { "kind": "bool", "default": true } } },
+    "combo": { "properties": {
+      "items_binding": { "kind": "binding" },
+      "selected_value_binding": { "kind": "binding" },
+      "placeholder": { "kind": "string" },
+      "tab_stop": { "kind": "bool", "default": true } } },
+    "toggle": { "properties": {
+      "label": { "kind": "text" },
+      "checked_binding": { "kind": "binding" },
       "tab_stop": { "kind": "bool", "default": true } } }
   }
 })";
@@ -453,4 +466,53 @@ DHEPZ_TEST(ScreenPresenter, SyntheticClickTravelsThroughGateAndModulePatch) {
   DHEPZ_CHECK_EQ(gate.Diagnostics().statuses.size(), static_cast<std::size_t>(1));
   DHEPZ_CHECK(gate.Diagnostics().statuses[0].ok);
   modules::ResetRegistryForTests();
+}
+
+DHEPZ_TEST(ScreenPresenter, TerminalControlsRenderAndUpdateGenericBindings) {
+  RecordingBackend backend;
+  json::Value core;
+  DHEPZ_CHECK(json::Parse(W(kCore), &core).ok());
+  std::vector<ui::config::Diagnostic> diagnostics;
+  std::unique_ptr<ui::config::ResolvedUiDocument> document;
+  DHEPZ_CHECK(ui::config::ResolveDocument(
+                  core,
+                  {{L"embedded", W(R"({ "components": [
+                    { "type": "screen", "route_id": "home", "children": [
+                      { "type": "input", "id": "folder",
+                        "value_binding": "folder", "placeholder": "Folder" },
+                      { "type": "toggle", "id": "admin", "label": "Admin",
+                        "checked_binding": "admin" },
+                      { "type": "combo", "id": "distro",
+                        "items_binding": "distros",
+                        "selected_value_binding": "selected",
+                        "placeholder": "Distro" }
+                    ] }
+                  ] })")}},
+                  &diagnostics, &document).ok());
+  ui::presenter::ScreenPresenter presenter(&backend);
+  presenter.SetDocument(document.get());
+  json::Value state = json::Value::Object();
+  state.Set(L"folder", json::Value::String(L"C:\\work"));
+  state.Set(L"admin", json::Value::Bool(false));
+  json::Value distros = json::Value::Array();
+  distros.Append(json::Value::String(L"Ubuntu"));
+  distros.Append(json::Value::String(L"Debian"));
+  state.Set(L"distros", std::move(distros));
+  state.Set(L"selected", json::Value::String(L"Ubuntu"));
+  DHEPZ_CHECK(presenter.ApplyStatePatch(L"home", state).ok());
+  presenter.Prepare({0.0f, 0.0f, 400.0f, 300.0f});
+  presenter.Paint({0.0f, 0.0f, 400.0f, 300.0f});
+
+  render::Rect admin{};
+  DHEPZ_CHECK(presenter.InteractiveBounds(L"admin", &admin));
+  DHEPZ_CHECK(presenter.HandleClick(admin.x + 4.0f, admin.y + 8.0f));
+  DHEPZ_CHECK(presenter.ViewStateValue(L"home", L"admin")->AsBool());
+
+  render::Rect distro{};
+  DHEPZ_CHECK(presenter.InteractiveBounds(L"distro", &distro));
+  DHEPZ_CHECK(presenter.HandleClick(distro.x + 4.0f, distro.y + 8.0f));
+  DHEPZ_CHECK_EQ(presenter.ViewStateValue(L"home", L"selected")->AsString(),
+                 std::wstring(L"Debian"));
+  DHEPZ_CHECK(std::find(backend.calls.begin(), backend.calls.end(),
+                        std::wstring(L"text:C:\\work")) != backend.calls.end());
 }

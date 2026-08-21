@@ -23,7 +23,11 @@ class FakeTerminalModule final : public modules::ModuleDescriptor {
   std::vector<std::wstring> DeclaredActions() const override {
     return {L"terminal:launch"};
   }
-  std::vector<std::wstring> DeclaredBindings() const override { return {}; }
+  std::vector<std::wstring> DeclaredBindings() const override {
+    return {L"working_folder", L"wsl_distros", L"wsl_distro", L"admin",
+            L"powershell_venv", L"cmd_venv", L"venv_available",
+            L"venv_enabled", L"busy", L"status", L"launch_enabled"};
+  }
   std::vector<std::wstring> DeclaredCapabilities() const override { return {}; }
   core::Status Bind(modules::ModuleHost&) override { return core::Ok(); }
   core::Status Handle(std::wstring_view action, const json::Value&,
@@ -121,7 +125,7 @@ DHEPZ_TEST(ProductionApplication, TerminalJsonActionReachesGateStatusPath) {
   app.presenter()->SwitchRoute(L"terminal");
   app.window()->Repaint();
   render::Rect button{};
-  DHEPZ_CHECK(app.presenter()->InteractiveBounds(L"launch-terminal", &button));
+  DHEPZ_CHECK(app.presenter()->InteractiveBounds(L"launch-powershell", &button));
   DHEPZ_CHECK(app.presenter()->HandleClick(
       button.x + button.width / 2.0f,
       button.y + button.height / 2.0f));

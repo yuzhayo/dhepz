@@ -68,16 +68,37 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::
   if (type == L"text") {
     const render::TextStyle style =
         text_style_provider_ ? text_style_provider_(node) : render::TextStyle{};
-    const render::Size size = MeasureText(node, node.GetString(L"text"), &style);
-    out.bounds.width = std::min(size.width, available.width);
+    const json::Value* text_value = Property(node, L"text");
+    const bool dynamic_text = text_value != nullptr && !text_value->is_string();
+    const render::Size size = MeasureText(
+        node, dynamic_text ? std::wstring_view(L"M")
+                           : std::wstring_view(node.GetString(L"text")),
+        &style);
+    out.bounds.width = dynamic_text ? available.width
+                                    : std::min(size.width, available.width);
     out.bounds.height = size.height;
     return out;
   }
 
   if (type == L"button") {
-    const render::Size size = MeasureText(node, node.GetString(L"label"));
+    const json::Value* label = Property(node, L"label");
+    const render::Size size = MeasureText(
+        node, label != nullptr && !label->is_string()
+                  ? std::wstring_view(L"Button")
+                  : std::wstring_view(node.GetString(L"label")));
     out.bounds.width = std::min(size.width + 16.0f, available.width);
     out.bounds.height = std::max(size.height + 8.0f, 24.0f);
+    return out;
+  }
+
+  if (type == L"input" || type == L"combo" || type == L"checkbox" ||
+      type == L"toggle") {
+    const std::wstring text = node.GetString(
+        L"label", node.GetString(L"placeholder", type));
+    const render::Size size = MeasureText(node, text);
+    out.bounds.width = std::min(std::max(size.width + 24.0f, 160.0f),
+                                available.width);
+    out.bounds.height = std::max(size.height + 10.0f, 30.0f);
     return out;
   }
 

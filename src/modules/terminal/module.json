@@ -4,6 +4,10 @@
   "order": 10,
   "showInTabs": true,
   "actions": ["terminal:launch"],
-  "bindings": [],
+  "bindings": [
+    "working_folder", "wsl_distros", "wsl_distro", "admin",
+    "powershell_venv", "cmd_venv", "venv_available", "venv_enabled",
+    "busy", "status", "launch_enabled"
+  ],
   "capabilities": []
 }
