@@ -51,6 +51,10 @@
     <TargetName>dhepz_tests</TargetName>
   </PropertyGroup>
 
+  <Target Name="GenerateEmbeddedUiForTests" BeforeTargets="ResourceCompile">
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass &quot;$(ProjectDir)..\tools\Merge-UiConfig.ps1&quot; -GenerateEmbedded -RepositoryRoot &quot;$(ProjectDir)..&quot; -EmbeddedOutputPath &quot;$(GeneratedDir)embedded_ui.tests.json&quot;" />
+  </Target>
+
   <ItemDefinitionGroup>
     <ClCompile>
       <!-- The same flag set as the app, on purpose. A test suite compiled under
@@ -81,7 +85,7 @@
       <DataExecutionPrevention>true</DataExecutionPrevention>
       <HighEntropyVA>true</HighEntropyVA>
       <ControlFlowGuard>Guard</ControlFlowGuard>
-      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;shlwapi.lib;advapi32.lib;ole32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;shlwapi.lib;advapi32.lib;ole32.lib;windowsapp.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -119,6 +123,7 @@
        the self-registration, leaving a green run with zero tests. -->
   <ItemGroup>
     <ClCompile Include="**\*.cpp" />
+    <ClCompile Include="..\src\application\**\*.cpp" />
     <ClCompile Include="..\src\core\**\*.cpp" />
     <ClCompile Include="..\src\platform\**\*.cpp" />
     <ClCompile Include="..\src\render\**\*.cpp" />

@@ -18,7 +18,9 @@ param(
 
     [switch] $GenerateEmbedded,
 
-    [string] $RepositoryRoot
+    [string] $RepositoryRoot,
+
+    [string] $EmbeddedOutputPath
 )
 
 Set-StrictMode -Version Latest
@@ -88,10 +90,14 @@ if ($GenerateEmbedded) {
         sources = $sources
         modules = $manifests
     }
-    $outDir = Join-Path $RepositoryRoot 'build\generated'
+    if (-not $PSBoundParameters.ContainsKey('EmbeddedOutputPath')) {
+        $EmbeddedOutputPath = Join-Path $RepositoryRoot 'build\generated\embedded_ui.json'
+    }
+    $EmbeddedOutputPath = [System.IO.Path]::GetFullPath($EmbeddedOutputPath)
+    $outDir = Split-Path -Parent $EmbeddedOutputPath
     $null = New-Item -ItemType Directory -Force -Path $outDir
     $json = ($merged | ConvertTo-Json -Depth 32) + "`n"
-    [System.IO.File]::WriteAllText((Join-Path $outDir 'embedded_ui.json'), $json, (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($EmbeddedOutputPath, $json, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "Embedded UI document written ($componentCount components)."
     exit 0
 }

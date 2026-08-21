@@ -9,19 +9,13 @@
 #include <vector>
 
 #include "app_version.h"
+#include "application/production_application.h"
 #include "core/json.h"
 #include "modules/gate/app_gate.h"
 #include "platform/files.h"
 #include "platform/performance_trace.h"
-#include "platform/tray_process.h"
 #include "ui/config/resolved_ui_document.h"
 
-// Phase 0's tray-resident process: one hidden infrastructure window and one
-// tray icon, no UI, no config, no modules. This is the thing whose idle
-// cost gets measured (#13), so it stays genuinely minimal: exactly one
-// thread, a message loop that blocks in GetMessageW, and nothing that wakes
-// when nothing changed.
-//
 // wWinMain rather than main: SubSystem is Windows, so there is no console
 // window to flash on launch. That matters for the ~400 ms cold-start budget
 // and for the silent --tray path.
@@ -30,9 +24,10 @@ namespace {
 // Distinct numeric exit codes for every bootstrap failure, each with a
 // MessageBox — no silent exits. The codes start at 10 so they cannot be
 // confused with a normal 0/1 result.
-[[noreturn]] void BootstrapFailed(unsigned int code, const wchar_t* what) {
-  MessageBoxW(nullptr, what, L"dhepz", MB_OK | MB_ICONERROR);
-  ExitProcess(code);
+int BootstrapFailed(unsigned int code, const core::Status& status) {
+  const std::wstring message = L"Application startup failed.\n\n" + status.Message();
+  MessageBoxW(nullptr, message.c_str(), L"dhepz", MB_OK | MB_ICONERROR);
+  return static_cast<int>(code);
 }
 
 // Build-time validation (#57): resolve the core catalog plus every screen
@@ -129,12 +124,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   // Tooling path (#57): validate the UI config and exit, no tray, no window.
   int argc = 0;
   LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  bool tray_only = false;
   for (int i = 0; i < argc && argv != nullptr; ++i) {
     if (lstrcmpW(argv[i], L"--validate-embedded") == 0) {
       const int code = RunValidateEmbedded();
       LocalFree(argv);
       return code;
     }
+    if (lstrcmpW(argv[i], L"--tray") == 0) tray_only = true;
   }
   for (int i = 0; i + 2 < argc + 1 && argv != nullptr; ++i) {
     if (lstrcmpW(argv[i], L"--validate-ui") == 0 && i + 2 <= argc - 1) {
@@ -155,23 +152,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   const std::int64_t process_entry_qpc = trace::CurrentQpc();
   trace::PerformanceTraceSession session(process_entry_qpc);
 
-  tray::TrayProcess tray_process;
-  switch (tray_process.Start(instance)) {
-    case tray::StartResult::Ok:
-      break;
-    case tray::StartResult::WindowClassFailed:
-      BootstrapFailed(10, L"The infrastructure window class could not be registered.");
-    case tray::StartResult::WindowCreateFailed:
-      BootstrapFailed(11, L"The infrastructure window could not be created.");
-    case tray::StartResult::TaskbarMessageFailed:
-      BootstrapFailed(12, L"The TaskbarCreated message could not be registered.");
-  }
-
-  // Non-fatal by design: a headless session has no shell to host the icon,
-  // and the process must still run (CI, automated runs).
-  tray_process.InstallTray();
-
-  const int result = tray_process.Run();
-  tray_process.Shutdown();
+  application::ProductionApplication application;
+  const core::Status started = application.Start(instance, tray_only);
+  if (!started.ok()) return BootstrapFailed(10, started);
+  const int result = application.Run();
+  application.Shutdown();
   return result;
 }
