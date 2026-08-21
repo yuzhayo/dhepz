@@ -3,7 +3,6 @@
 // from the gate and surfaces them via Log/ReportStatus; the rendered
 // in-app list lands with viewState bindings, the CI artifact with #85.
 #include "modules/contract/module_contract.h"
-#include "modules/gate/app_gate.h"
 #include "modules/registry/module_registry.h"
 
 #include <memory>
@@ -34,9 +33,17 @@ class DiagnosticsModule final : public modules::ModuleDescriptor {
       return core::Err(core::ErrorCode::NotFound, L"unknown action");
     }
     last_summary_.clear();
-    for (const modules::RejectEntry& reject : modules::CurrentRejects()) {
+    const modules::DiagnosticsReadModel diagnostics = host_->Diagnostics();
+    for (const modules::ModuleDiagnosticEntry& reject : diagnostics.rejected) {
       const std::wstring line = reject.module_id + L": " + reject.reason;
       host_->Log(L"warn", line);
+      if (!last_summary_.empty()) last_summary_ += L"\n";
+      last_summary_ += line;
+    }
+    for (const modules::ModuleStatusEntry& status : diagnostics.statuses) {
+      const std::wstring line = status.module_id + L": " +
+                                (status.ok ? L"Ok" : status.message);
+      host_->Log(status.ok ? L"info" : L"warn", line);
       if (!last_summary_.empty()) last_summary_ += L"\n";
       last_summary_ += line;
     }

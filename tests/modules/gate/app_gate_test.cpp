@@ -347,6 +347,8 @@ DHEPZ_TEST(AppGateContract, GeneratedEnvelopePreservesFileLineAndColumn) {
                  std::wstring(L"src/modules/ref-module/screen.json"));
   DHEPZ_CHECK_EQ(gate.Rejects()[0].line, 5);
   DHEPZ_CHECK(gate.Rejects()[0].column > 0);
+  DHEPZ_CHECK(gate.Rejects()[0].stage ==
+              modules::DiagnosticStage::Pairing);
   modules::ResetRegistryForTests();
 }
 

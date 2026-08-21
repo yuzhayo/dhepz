@@ -49,6 +49,49 @@ struct PeerInfo {
   std::wstring settings_route;  // empty when the peer ships no settings screen
 };
 
+enum class DiagnosticStage {
+  Manifest,
+  Pairing,
+  Capability,
+  Bind,
+  Dispatch,
+  Runtime,
+  Settings,
+  Startup,
+};
+
+struct ModuleDiagnosticEntry {
+  std::wstring module_id;
+  std::wstring reason;
+  std::wstring file;
+  int line = 0;
+  int column = 0;
+  DiagnosticStage stage = DiagnosticStage::Pairing;
+};
+
+struct CapabilityGrantInfo {
+  std::wstring module_id;
+  std::wstring capability;
+  std::wstring file;
+  int line = 0;
+  int column = 0;
+};
+
+struct ModuleStatusEntry {
+  std::wstring module_id;
+  bool ok = true;
+  std::wstring message;
+};
+
+struct DiagnosticsReadModel {
+  std::vector<PeerInfo> accepted;
+  std::vector<ModuleDiagnosticEntry> rejected;
+  std::vector<CapabilityGrantInfo> grants;
+  std::vector<ModuleDiagnosticEntry> runtime_faults;
+  // Latest status per module, bounded by mounted module count.
+  std::vector<ModuleStatusEntry> statuses;
+};
+
 enum class ProcessOperation { Launch, ElevatedLaunch, Capture };
 
 enum class HostOperationKind {
@@ -192,6 +235,9 @@ class ModuleHost {
   // the output to null and returns PermissionDenied.
   virtual core::Status GetSettingsAllFacet(SettingsAllFacet** facet) = 0;
   virtual core::Status GetConfigWriteFacet(ConfigWriteFacet** facet) = 0;
+  // Immutable parent-owned metadata. The default keeps ordinary modules and
+  // test fakes narrow; the diagnostics module receives the real gate model.
+  virtual DiagnosticsReadModel Diagnostics() { return {}; }
   // Report success/error; the parent decides how to show it.
   virtual void ReportStatus(const core::Status& status) = 0;
   virtual void Log(std::wstring_view level, std::wstring_view text) = 0;
