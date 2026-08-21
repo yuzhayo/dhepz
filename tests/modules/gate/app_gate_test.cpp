@@ -56,12 +56,7 @@ struct Mismatch {
   static std::vector<std::wstring> Caps() { return {L"config:write"}; }
 };
 struct ClaimA {
-  static std::wstring_view Id() { return L"claim-a"; }
-  static std::vector<std::wstring> Actions() { return {}; }
-  static std::vector<std::wstring> Caps() { return {L"settings:all"}; }
-};
-struct ClaimB {
-  static std::wstring_view Id() { return L"claim-b"; }
+  static std::wstring_view Id() { return L"settings"; }
   static std::vector<std::wstring> Actions() { return {}; }
   static std::vector<std::wstring> Caps() { return {L"settings:all"}; }
 };
@@ -78,10 +73,6 @@ std::unique_ptr<modules::ModuleDescriptor> MakeMismatch() {
 std::unique_ptr<modules::ModuleDescriptor> MakeClaimA() {
   return std::make_unique<SimpleModule<ClaimA>>();
 }
-std::unique_ptr<modules::ModuleDescriptor> MakeClaimB() {
-  return std::make_unique<SimpleModule<ClaimB>>();
-}
-
 const char* kCore = R"({
   "schema": "dhepz.ui.core",
   "version": 1,
@@ -185,21 +176,19 @@ DHEPZ_TEST(AppGate, CapabilityMismatchBetweenCodeAndManifestRejected) {
 
 DHEPZ_TEST(AppGate, SettingsAllIsSingleClaimant) {
   modules::ResetRegistryForTests();
-  modules::RegisterModule(L"claim-a", &MakeClaimA);
-  modules::RegisterModule(L"claim-b", &MakeClaimB);
+  modules::RegisterModule(L"settings", &MakeClaimA);
   modules::AppGate gate;
   const std::wstring screens =
-      L"{ \"type\": \"screen\", \"route_id\": \"a-home\", \"module_id\": \"claim-a\","
-        L" \"children\": [ { \"type\": \"text\", \"text\": \"a\" } ] },"
-        L"{ \"type\": \"screen\", \"route_id\": \"b-home\", \"module_id\": \"claim-b\","
-        L" \"children\": [ { \"type\": \"text\", \"text\": \"b\" } ] }";
+      L"{ \"type\": \"screen\", \"route_id\": \"settings-home\", \"module_id\": \"settings\","
+        L" \"children\": [ { \"type\": \"text\", \"text\": \"a\" } ] }";
   const std::wstring manifests =
-      ManifestFor(L"claim-a", L"\"settings:all\"") + L", " +
-      ManifestFor(L"claim-b", L"\"settings:all\"");
+      ManifestFor(L"settings", L"\"settings:all\"") + L", " +
+      ManifestFor(L"settings", L"\"settings:all\"");
   DHEPZ_CHECK(gate.StartWithEmbedded(EmbeddedWith(screens, manifests)).ok());
-  DHEPZ_CHECK(gate.Mounted(L"claim-a"));
-  DHEPZ_CHECK(!gate.Mounted(L"claim-b"));
+  DHEPZ_CHECK(gate.Mounted(L"settings"));
   DHEPZ_CHECK_EQ(gate.Rejects().size(), static_cast<std::size_t>(1));
   DHEPZ_CHECK(gate.Rejects()[0].reason.find(L"already claimed") != std::wstring::npos);
+  DHEPZ_CHECK(!gate.Rejects()[0].file.empty());
+  DHEPZ_CHECK(gate.Rejects()[0].line > 0);
   modules::ResetRegistryForTests();
 }

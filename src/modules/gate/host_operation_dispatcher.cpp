@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "platform/files.h"
 #include "platform/paths.h"
 #include "platform/process.h"
 #include "platform/strings.h"
@@ -264,6 +265,61 @@ core::Status HostOperationDispatcher::StartFolderProbe(const FolderProbeRequest&
     if (impl_->invalidated) {
       impl_->worker.Cancel(handle);
       return DHEPZ_ERR(core::ErrorCode::Cancelled, L"Module host generation is invalid");
+    }
+    impl_->requests.emplace(issued.value, std::move(handle));
+  }
+  *token = issued;
+  return core::Ok();
+}
+
+core::Status HostOperationDispatcher::StartAtomicWrite(
+    std::wstring path, std::wstring text, HostOperationCallback callback,
+    AsyncRequestToken* token) {
+  DHEPZ_RETURN_IF_ERROR(ValidateStart(callback, token));
+  if (path.empty()) {
+    return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                     L"An atomic-write target is required");
+  }
+
+  AsyncRequestToken issued;
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->invalidated) {
+      return DHEPZ_ERR(core::ErrorCode::Cancelled,
+                       L"Module host generation is invalid");
+    }
+    issued.value = impl_->next_token++;
+  }
+  const std::uint64_t generation = impl_->generation;
+  worker::JobHandle handle = impl_->worker.Submit(
+      [path = std::move(path), text = std::move(text), issued,
+       generation](const std::atomic<bool>& cancelled) {
+        auto completion = std::make_shared<HostOperationCompletion>();
+        completion->token = issued;
+        completion->generation = generation;
+        completion->kind = HostOperationKind::ConfigSave;
+        if (!cancelled.load()) {
+          completion->status = files::WriteTextAtomic(path, text);
+        }
+        return std::static_pointer_cast<void>(completion);
+      },
+      [this, callback = std::move(callback), issued](
+          std::shared_ptr<void> cargo) {
+        {
+          std::lock_guard lock(impl_->mutex);
+          impl_->requests.erase(issued.value);
+        }
+        callback(*std::static_pointer_cast<HostOperationCompletion>(
+            std::move(cargo)));
+      },
+      generation);
+
+  {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->invalidated) {
+      impl_->worker.Cancel(handle);
+      return DHEPZ_ERR(core::ErrorCode::Cancelled,
+                       L"Module host generation is invalid");
     }
     impl_->requests.emplace(issued.value, std::move(handle));
   }

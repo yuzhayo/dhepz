@@ -42,6 +42,14 @@ class FakeHost final : public modules::ModuleHost {
   }
   void CancelRequest(modules::AsyncRequestToken) override {}
   core::Status PublishStatePatch(const json::Value&) override { return core::Ok(); }
+  core::Status GetSettingsAllFacet(modules::SettingsAllFacet** facet) override {
+    *facet = nullptr;
+    return core::Err(core::ErrorCode::PermissionDenied, L"not granted");
+  }
+  core::Status GetConfigWriteFacet(modules::ConfigWriteFacet** facet) override {
+    *facet = nullptr;
+    return core::Err(core::ErrorCode::PermissionDenied, L"not granted");
+  }
   void ReportStatus(const core::Status&) override {}
   void Log(std::wstring_view, std::wstring_view) override {}
   core::Status RequestRoute(std::wstring_view) override { return core::Ok(); }

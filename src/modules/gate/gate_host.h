@@ -15,6 +15,8 @@
 namespace modules {
 
 class HostOperationDispatcher;
+class ConfigTransactionService;
+class SettingsAccessService;
 
 using HostStatePatchHandler =
     std::function<core::Status(std::wstring_view module_id,
@@ -23,11 +25,17 @@ using HostRouteRequestHandler =
     std::function<core::Status(std::wstring_view route_id)>;
 using HostPeersHandler = std::function<std::vector<PeerInfo>()>;
 
-class GateHost final : public ModuleHost {
+class GateHost final : public ModuleHost,
+                       public SettingsAllFacet,
+                       public ConfigWriteFacet {
  public:
   GateHost(std::wstring module_id,
            HostRouteRequestHandler route_request_handler,
-           HostPeersHandler peers_handler, void* operation_window,
+           HostPeersHandler peers_handler,
+           SettingsAccessService* settings_service,
+           ConfigTransactionService* config_service,
+           bool settings_all_granted, bool config_write_granted,
+           void* operation_window,
            unsigned int operation_message,
            HostStatePatchHandler state_patch_handler);
   ~GateHost() override;
@@ -46,6 +54,25 @@ class GateHost final : public ModuleHost {
                                 AsyncRequestToken* token) override;
   void CancelRequest(AsyncRequestToken token) override;
   core::Status PublishStatePatch(const json::Value& patch) override;
+  core::Status GetSettingsAllFacet(SettingsAllFacet** facet) override;
+  core::Status GetConfigWriteFacet(ConfigWriteFacet** facet) override;
+  core::Status ReadGlobal(std::wstring_view key, std::wstring* out) override;
+  core::Status WriteGlobal(std::wstring_view key,
+                           std::wstring_view value) override;
+  core::Status ReadModule(std::wstring_view module_id,
+                          std::wstring_view key,
+                          std::wstring* out) override;
+  core::Status WriteModule(std::wstring_view module_id,
+                           std::wstring_view key,
+                           std::wstring_view value) override;
+  core::Status Preview(std::wstring_view candidate,
+                       ConfigPreviewResult* result) override;
+  core::Status Save(ConfigPreviewToken preview,
+                    HostOperationCallback callback,
+                    AsyncRequestToken* request) override;
+  core::Status Discard(
+      ConfigPreviewToken preview,
+      std::vector<std::wstring>* affected_routes) override;
   void ReportStatus(const core::Status& status) override;
   void Log(std::wstring_view level, std::wstring_view text) override;
   core::Status RequestRoute(std::wstring_view route_id) override;
@@ -55,10 +82,12 @@ class GateHost final : public ModuleHost {
   std::wstring module_id_;
   HostRouteRequestHandler route_request_handler_;
   HostPeersHandler peers_handler_;
+  SettingsAccessService* settings_service_;
+  ConfigTransactionService* config_service_;
+  bool settings_all_granted_ = false;
+  bool config_write_granted_ = false;
   ModuleSurface surface_;
   std::mutex mutex_;
-  std::map<std::wstring, std::map<std::wstring, std::wstring>> settings_;
-  std::map<std::wstring, std::wstring> global_;
   std::map<std::wstring, std::wstring> storage_;
   std::vector<std::wstring> log_;
   core::Status last_status_;

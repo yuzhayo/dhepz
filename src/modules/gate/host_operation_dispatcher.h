@@ -31,6 +31,11 @@ class HostOperationDispatcher final {
                             AsyncRequestToken* token);
   core::Status StartFolderProbe(const FolderProbeRequest& request,
                                 HostOperationCallback callback, AsyncRequestToken* token);
+  // Parent-internal service used by config:write. Modules cannot choose the
+  // destination; the transaction service supplies its configured path.
+  core::Status StartAtomicWrite(std::wstring path, std::wstring text,
+                                HostOperationCallback callback,
+                                AsyncRequestToken* token);
   void CancelRequest(AsyncRequestToken token);
 
   // Permanently invalidates this module-host lifetime. Running jobs may finish
