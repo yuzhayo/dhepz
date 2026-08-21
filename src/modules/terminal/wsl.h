@@ -32,8 +32,8 @@ class WslEnumerator final {
   const std::vector<std::wstring>& Distros() const { return distros_; }
   bool cached() const { return cached_; }
 
-  // Pure parse, exposed for tests: tolerates UTF-16-decoded input, skips
-  // the header line, blank lines, and "(Default)" markers.
+  // Pure parse, exposed for tests: keeps headerless -q output intact, tolerates
+  // decoded UTF-16 BOM/NULs, and skips only positively recognized old headers.
   static std::vector<std::wstring> ParseListOutput(const std::wstring& output);
 
  private:

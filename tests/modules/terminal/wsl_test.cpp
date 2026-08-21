@@ -7,18 +7,33 @@
 namespace {
 
 const std::wstring kTwoDistros =
-    L"Windows Subsystem for Linux Distributions:\nUbuntu (Default)\r\nDebian\r\n";
+    L"Ubuntu\r\nDebian\r\n";
 const std::wstring kThreeDistros =
-    L"Windows Subsystem for Linux Distributions:\nUbuntu (Default)\r\nDebian\r\nAlpine\r\n";
+    L"Ubuntu\r\nDebian\r\nAlpine\r\n";
 
 }  // namespace
 
-DHEPZ_TEST(Wsl, ParseSkipsHeaderBlankLinesAndDefaultMarker) {
+DHEPZ_TEST(Wsl, HeaderlessOutputKeepsFirstDistroAndFinalUnterminatedLine) {
+  std::wstring output = L"\uFEFF";
+  output.push_back(L'\0');
+  output.append(L"Ubuntu");
+  output.push_back(L'\0');
+  output.append(L"\r\n\r\n  Debian  ");
   const std::vector<std::wstring> distros =
-      terminal::WslEnumerator::ParseListOutput(kTwoDistros);
+      terminal::WslEnumerator::ParseListOutput(output);
   DHEPZ_CHECK_EQ(distros.size(), static_cast<std::size_t>(2));
   DHEPZ_CHECK_EQ(distros[0], std::wstring(L"Ubuntu"));
   DHEPZ_CHECK_EQ(distros[1], std::wstring(L"Debian"));
+}
+
+DHEPZ_TEST(Wsl, RecognizedHeaderAndDefaultSuffixAreCompatibilityOnly) {
+  const std::vector<std::wstring> distros = terminal::WslEnumerator::ParseListOutput(
+      L"Windows Subsystem for Linux Distributions:\r\nUbuntu (Default)\r\n"
+      L"Windows Subsystem distro\r\nLiteral(Default)\r\n");
+  DHEPZ_CHECK_EQ(distros.size(), static_cast<std::size_t>(3));
+  DHEPZ_CHECK_EQ(distros[0], std::wstring(L"Ubuntu"));
+  DHEPZ_CHECK_EQ(distros[1], std::wstring(L"Windows Subsystem distro"));
+  DHEPZ_CHECK_EQ(distros[2], std::wstring(L"Literal(Default)"));
 }
 
 DHEPZ_TEST(Wsl, RefreshCachesPerSession) {
@@ -43,7 +58,10 @@ DHEPZ_TEST(Wsl, FailedRefreshKeepsThePreviousCache) {
     return core::Err(core::ErrorCode::IoError, L"wsl missing");
   });
   DHEPZ_CHECK(enumerator.Refresh().ok());
-  DHEPZ_CHECK(!enumerator.Refresh().ok());
+  const core::Status failure = enumerator.Refresh();
+  DHEPZ_CHECK(!failure.ok());
+  DHEPZ_CHECK_EQ(failure.Code(), core::ErrorCode::IoError);
+  DHEPZ_CHECK_EQ(failure.Message(), std::wstring(L"wsl missing"));
   DHEPZ_CHECK_EQ(enumerator.Distros().size(), static_cast<std::size_t>(2));
 }
 

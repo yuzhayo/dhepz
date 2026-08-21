@@ -1,10 +1,35 @@
 #include "modules/terminal/wsl.h"
 
+#include <algorithm>
+#include <cwctype>
+
 namespace terminal {
 namespace {
 
 core::Status DefaultRunner(std::wstring_view command_line, process::RunResult* out) {
   return process::RunCapture(command_line, L"", 10000, out);
+}
+
+}  // namespace
+
+namespace {
+
+std::wstring TrimLine(std::wstring line) {
+  line.erase(std::remove(line.begin(), line.end(), L'\0'), line.end());
+  while (!line.empty() && (std::iswspace(line.back()) || line.back() == L'\uFEFF')) {
+    line.pop_back();
+  }
+  std::size_t first = 0;
+  while (first < line.size() && (std::iswspace(line[first]) || line[first] == L'\uFEFF')) {
+    ++first;
+  }
+  line.erase(0, first);
+  return line;
+}
+
+bool IsRecognizedHeader(const std::wstring& line) {
+  return line == L"Windows Subsystem for Linux Distributions:" ||
+         line == L"Windows Subsystem for Linux Distributions";
 }
 
 }  // namespace
@@ -16,24 +41,17 @@ WslEnumerator::WslEnumerator(Runner runner) : runner_(std::move(runner)) {}
 std::vector<std::wstring> WslEnumerator::ParseListOutput(const std::wstring& output) {
   std::vector<std::wstring> distros;
   std::wstring line;
-  bool first_content = true;
   const auto flush = [&] {
-    std::wstring name = line;
-    // strip \r and surrounding whitespace
-    while (!name.empty() && (name.back() == L'\r' || name.back() == L' ')) name.pop_back();
-    while (!name.empty() && (name.front() == L' ')) name.erase(name.begin());
-    // remove a trailing " (Default)" marker wherever it sits
-    const std::wstring marker = L"(Default)";
-    const auto pos = name.find(marker);
-    if (pos != std::wstring::npos) {
-      name.erase(pos);
-      while (!name.empty() && (name.back() == L' ')) name.pop_back();
+    std::wstring name = TrimLine(line);
+    if (name.empty() || IsRecognizedHeader(name)) return;
+
+    constexpr std::wstring_view marker = L" (Default)";
+    if (name.size() >= marker.size() &&
+        name.compare(name.size() - marker.size(), marker.size(), marker) == 0) {
+      name.erase(name.size() - marker.size());
+      name = TrimLine(std::move(name));
     }
-    if (first_content) {
-      first_content = false;  // the header line ("Windows Subsystem ...")
-      return;
-    }
-    if (!name.empty()) distros.push_back(name);
+    if (!name.empty()) distros.push_back(std::move(name));
   };
   for (const wchar_t c : output) {
     if (c == L'\n') {
