@@ -65,6 +65,14 @@ struct TestHost final : modules::ModuleHost {
     published_patch = patch;
     return core::Ok();
   }
+  core::Status GetSettingsAllFacet(modules::SettingsAllFacet** facet) override {
+    *facet = nullptr;
+    return core::Err(core::ErrorCode::PermissionDenied, L"not granted");
+  }
+  core::Status GetConfigWriteFacet(modules::ConfigWriteFacet** facet) override {
+    *facet = nullptr;
+    return core::Err(core::ErrorCode::PermissionDenied, L"not granted");
+  }
   void ReportStatus(const core::Status& s) override { reported = !s.ok(); }
   void Log(std::wstring_view, std::wstring_view) override {}
   core::Status RequestRoute(std::wstring_view route) override {
@@ -125,6 +133,24 @@ DHEPZ_TEST(ModuleManifest, ValidManifestParses) {
   DHEPZ_CHECK(manifest.show_in_tabs);
   DHEPZ_CHECK_EQ(manifest.settings_route, std::wstring(L"terminal-settings"));
   DHEPZ_CHECK_EQ(manifest.actions.size(), static_cast<std::size_t>(2));
+}
+
+DHEPZ_TEST(ModuleContract, PrivilegedCapabilitiesUseDedicatedTypedFacets) {
+  TestHost host;
+  modules::SettingsAllFacet* settings = reinterpret_cast<modules::SettingsAllFacet*>(1);
+  const core::Status settings_status = host.GetSettingsAllFacet(&settings);
+  DHEPZ_CHECK(!settings_status.ok());
+  DHEPZ_CHECK(settings == nullptr);
+
+  modules::ConfigWriteFacet* config = reinterpret_cast<modules::ConfigWriteFacet*>(1);
+  const core::Status config_status = host.GetConfigWriteFacet(&config);
+  DHEPZ_CHECK(!config_status.ok());
+  DHEPZ_CHECK(config == nullptr);
+
+  modules::ConfigPreviewResult preview;
+  DHEPZ_CHECK(!preview.token);
+  DHEPZ_CHECK(preview.affected_routes.empty());
+  DHEPZ_CHECK(preview.diagnostics.empty());
 }
 
 DHEPZ_TEST(ModuleContract, AsyncOperationsAreTypedAndTokened) {

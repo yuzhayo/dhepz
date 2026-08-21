@@ -3,7 +3,9 @@
 #include <algorithm>
 
 #include "core/json.h"
+#include "modules/gate/config_transaction_service.h"
 #include "modules/gate/gate_host.h"
+#include "modules/gate/settings_access_service.h"
 #include "modules/registry/module_registry.h"
 #include "ui/config/config_store.h"
 
@@ -21,7 +23,11 @@ const std::vector<RejectEntry>& CurrentRejects() {
   return g_rejects != nullptr ? *g_rejects : empty;
 }
 
-AppGate::AppGate() = default;
+AppGate::AppGate()
+    : settings_service_(
+          std::make_unique<SettingsAccessService>([this]() { return Peers(); })),
+      config_service_(std::make_unique<ConfigTransactionService>(
+          &document_, &document_generation_)) {}
 AppGate::~AppGate() = default;
 
 core::Status AppGate::Start(std::wstring_view override_path) {
@@ -53,8 +59,22 @@ core::Status AppGate::ConfigureHostOperations(void* ui_window,
   return core::Ok();
 }
 
+core::Status AppGate::ConfigureConfigOverridePath(std::wstring path) {
+  if (!mounted_.empty()) {
+    return core::Err(core::ErrorCode::AlreadyExists,
+                     L"Config path must be configured before gate start");
+  }
+  return config_service_->ConfigureOverridePath(std::move(path));
+}
+
 core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
                                    std::wstring_view override_text) {
+  document_.reset();
+  mounted_.clear();
+  rejects_.clear();
+  grants_.clear();
+  action_map_.clear();
+  current_route_.clear();
   json::Value embedded;
   DHEPZ_RETURN_IF_ERROR(json::Parse(embedded_text, &embedded));
   const json::Value* core = embedded.Find(L"core");
@@ -74,10 +94,13 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
   }
   std::vector<ui::config::Diagnostic> ui_diags;
   DHEPZ_RETURN_IF_ERROR(ui::config::ResolveDocument(*core, sources, &ui_diags, &document_));
+  ++document_generation_;
+  config_service_->ConfigureBase(*core, sources.front());
 
   const std::vector<RegisteredModule> registered = RegistrySnapshot();
   const json::Value* manifests = embedded.Find(L"modules");
-  int settings_all_claimants = 0;
+  bool settings_all_claimed = false;
+  bool config_write_claimed = false;
 
   if (manifests != nullptr && manifests->is_array()) {
     for (const json::Value& manifest_value : manifests->items()) {
@@ -142,21 +165,66 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
         }
       }
       bool capability_ok = true;
+      bool settings_all_granted = false;
+      bool config_write_granted = false;
+      const json::Value* capabilities_value = manifest_value.Find(L"capabilities");
+      const int capability_line = capabilities_value != nullptr
+                                      ? capabilities_value->line()
+                                      : 1;
+      const int capability_column = capabilities_value != nullptr
+                                        ? capabilities_value->column()
+                                        : 1;
       for (const std::wstring& cap : declared) {
         if (cap == std::wstring(kCapabilitySettingsAll)) {
-          if (++settings_all_claimants > 1) {
-            rejects_.push_back({manifest.module_id,
-                                L"settings:all already claimed by another module"});
+          if (manifest.module_id != L"settings") {
+            rejects_.push_back(
+                {manifest.module_id,
+                 L"settings:all is reserved for module 'settings'",
+                 L"embedded", capability_line, capability_column});
             capability_ok = false;
             break;
           }
-        } else if (cap != std::wstring(kCapabilityConfigWrite)) {
-          rejects_.push_back({manifest.module_id, L"unknown capability '" + cap + L"'"});
+          if (settings_all_claimed) {
+            rejects_.push_back(
+                {manifest.module_id,
+                 L"settings:all already claimed by another module",
+                 L"embedded", capability_line, capability_column});
+            capability_ok = false;
+            break;
+          }
+          settings_all_granted = true;
+        } else if (cap == std::wstring(kCapabilityConfigWrite)) {
+          if (manifest.module_id != L"ui-editor") {
+            rejects_.push_back(
+                {manifest.module_id,
+                 L"config:write is reserved for module 'ui-editor'",
+                 L"embedded", capability_line, capability_column});
+            capability_ok = false;
+            break;
+          }
+          if (config_write_claimed) {
+            rejects_.push_back(
+                {manifest.module_id,
+                 L"config:write already claimed by another module",
+                 L"embedded", capability_line, capability_column});
+            capability_ok = false;
+            break;
+          }
+          config_write_granted = true;
+        } else {
+          rejects_.push_back({manifest.module_id,
+                              L"unknown capability '" + cap + L"'",
+                              L"embedded", capability_line,
+                              capability_column});
           capability_ok = false;
           break;
         }
       }
       if (!capability_ok) continue;
+      for (const std::wstring& capability : declared) {
+        grants_.push_back({manifest.module_id, capability, L"embedded",
+                           capability_line, capability_column});
+      }
 
       if (!manifest.settings_route.empty()) {
         bool ships = false;
@@ -190,6 +258,8 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
         if (!actions_ok) break;
       }
       if (!actions_ok) continue;
+      if (settings_all_granted) settings_all_claimed = true;
+      if (config_write_granted) config_write_claimed = true;
       for (const std::wstring& action : descriptor->DeclaredActions()) {
         action_map_.emplace_back(action, module.manifest.module_id);
       }
@@ -197,7 +267,9 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
       module.host = std::make_unique<GateHost>(
           module.manifest.module_id,
           [this](std::wstring_view route_id) { return RequestRoute(route_id); },
-          [this]() { return Peers(); }, operation_window_, operation_message_,
+          [this]() { return Peers(); }, settings_service_.get(),
+          config_service_.get(), settings_all_granted, config_write_granted,
+          operation_window_, operation_message_,
           state_patch_handler_);
       mounted_.push_back(std::move(module));
     }

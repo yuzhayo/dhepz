@@ -2,18 +2,28 @@
 
 #include <utility>
 
+#include "modules/gate/config_transaction_service.h"
 #include "modules/gate/host_operation_dispatcher.h"
+#include "modules/gate/settings_access_service.h"
 
 namespace modules {
 
 GateHost::GateHost(std::wstring module_id,
                    HostRouteRequestHandler route_request_handler,
-                   HostPeersHandler peers_handler, void* operation_window,
+                   HostPeersHandler peers_handler,
+                   SettingsAccessService* settings_service,
+                   ConfigTransactionService* config_service,
+                   bool settings_all_granted, bool config_write_granted,
+                   void* operation_window,
                    unsigned int operation_message,
                    HostStatePatchHandler state_patch_handler)
     : module_id_(std::move(module_id)),
       route_request_handler_(std::move(route_request_handler)),
-      peers_handler_(std::move(peers_handler)) {
+      peers_handler_(std::move(peers_handler)),
+      settings_service_(settings_service),
+      config_service_(config_service),
+      settings_all_granted_(settings_all_granted),
+      config_write_granted_(config_write_granted) {
   if (operation_window == nullptr || operation_message == 0) return;
 
   StatePatchSink sink;
@@ -30,32 +40,17 @@ GateHost::~GateHost() = default;
 ModuleSurface GateHost::Surface() { return surface_; }
 
 core::Status GateHost::SettingsRead(std::wstring_view key, std::wstring* out) {
-  std::lock_guard lock(mutex_);
-  const auto& section = settings_[module_id_];
-  const auto it = section.find(std::wstring(key));
-  if (it == section.end()) {
-    return core::Err(core::ErrorCode::NotFound, L"no such key");
-  }
-  *out = it->second;
-  return core::Ok();
+  return settings_service_->ReadModule(module_id_, key, out);
 }
 
 core::Status GateHost::SettingsReadGlobal(std::wstring_view key,
                                           std::wstring* out) {
-  std::lock_guard lock(mutex_);
-  const auto it = global_.find(std::wstring(key));
-  if (it == global_.end()) {
-    return core::Err(core::ErrorCode::NotFound, L"no such key");
-  }
-  *out = it->second;
-  return core::Ok();
+  return settings_service_->ReadGlobal(key, out);
 }
 
 core::Status GateHost::SettingsWrite(std::wstring_view key,
                                      std::wstring_view value) {
-  std::lock_guard lock(mutex_);
-  settings_[module_id_][std::wstring(key)] = std::wstring(value);
-  return core::Ok();
+  return settings_service_->WriteModule(module_id_, key, value);
 }
 
 core::Status GateHost::StorageWrite(std::wstring_view name,
@@ -105,6 +100,87 @@ core::Status GateHost::PublishStatePatch(const json::Value& patch) {
                      L"state patch sink is not configured");
   }
   return operations_->PublishStatePatch(patch);
+}
+
+core::Status GateHost::GetSettingsAllFacet(SettingsAllFacet** facet) {
+  if (facet == nullptr) {
+    return core::Err(core::ErrorCode::InvalidArgument,
+                     L"facet output is required");
+  }
+  *facet = settings_all_granted_ ? this : nullptr;
+  return *facet != nullptr
+             ? core::Ok()
+             : core::Err(core::ErrorCode::PermissionDenied,
+                         L"settings:all is not granted");
+}
+
+core::Status GateHost::GetConfigWriteFacet(ConfigWriteFacet** facet) {
+  if (facet == nullptr) {
+    return core::Err(core::ErrorCode::InvalidArgument,
+                     L"facet output is required");
+  }
+  *facet = config_write_granted_ ? this : nullptr;
+  return *facet != nullptr
+             ? core::Ok()
+             : core::Err(core::ErrorCode::PermissionDenied,
+                         L"config:write is not granted");
+}
+
+core::Status GateHost::ReadGlobal(std::wstring_view key, std::wstring* out) {
+  return settings_service_->ReadGlobal(key, out);
+}
+
+core::Status GateHost::WriteGlobal(std::wstring_view key,
+                                   std::wstring_view value) {
+  return settings_service_->WriteGlobal(key, value);
+}
+
+core::Status GateHost::ReadModule(std::wstring_view module_id,
+                                  std::wstring_view key,
+                                  std::wstring* out) {
+  return settings_service_->ReadModule(module_id, key, out);
+}
+
+core::Status GateHost::WriteModule(std::wstring_view module_id,
+                                   std::wstring_view key,
+                                   std::wstring_view value) {
+  return settings_service_->WriteModule(module_id, key, value);
+}
+
+core::Status GateHost::Preview(std::wstring_view candidate,
+                               ConfigPreviewResult* result) {
+  return config_service_->Preview(candidate, result);
+}
+
+core::Status GateHost::Save(ConfigPreviewToken preview,
+                            HostOperationCallback callback,
+                            AsyncRequestToken* request) {
+  if (!operations_) {
+    return core::Err(core::ErrorCode::Unsupported,
+                     L"async config save host is not configured");
+  }
+  std::wstring path;
+  std::wstring text;
+  DHEPZ_RETURN_IF_ERROR(config_service_->BeginSave(preview, &path, &text));
+  const core::Status started = operations_->StartAtomicWrite(
+      std::move(path), std::move(text),
+      [service = config_service_, preview, callback = std::move(callback)](
+          const HostOperationCompletion& completion) {
+        service->CompleteSave(preview, completion.status);
+        callback(completion);
+      },
+      request);
+  if (!started.ok()) {
+    const core::Status aborted = config_service_->AbortSave(preview);
+    (void)aborted;
+  }
+  return started;
+}
+
+core::Status GateHost::Discard(
+    ConfigPreviewToken preview,
+    std::vector<std::wstring>* affected_routes) {
+  return config_service_->Discard(preview, affected_routes);
 }
 
 void GateHost::ReportStatus(const core::Status& status) { last_status_ = status; }

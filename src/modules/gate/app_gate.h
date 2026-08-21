@@ -10,6 +10,7 @@
 // never depend on any module loading.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,11 +25,25 @@ namespace modules {
 struct RejectEntry {
   std::wstring module_id;
   std::wstring reason;
+  std::wstring file;
+  int line = 0;
+  int column = 0;
+};
+
+struct CapabilityGrant {
+  std::wstring module_id;
+  std::wstring capability;
+  std::wstring file;
+  int line = 0;
+  int column = 0;
 };
 
 // Reject list of the most recent gate Start — the diagnostics module reads
 // this; there is exactly one gate (single choke point).
 const std::vector<RejectEntry>& CurrentRejects();
+
+class ConfigTransactionService;
+class SettingsAccessService;
 
 class AppGate final {
  public:
@@ -47,10 +62,13 @@ class AppGate final {
   // completion message to worker::Worker::Settle.
   core::Status ConfigureHostOperations(void* ui_window, unsigned int completion_message,
                                        HostStatePatchHandler state_patch_handler);
+  core::Status ConfigureConfigOverridePath(std::wstring path);
 
   const ui::config::ResolvedUiDocument* document() const { return document_.get(); }
+  std::uint64_t document_generation() const { return document_generation_; }
   std::vector<PeerInfo> Peers() const;
   const std::vector<RejectEntry>& Rejects() const { return rejects_; }
+  const std::vector<CapabilityGrant>& Grants() const { return grants_; }
   bool Mounted(std::wstring_view module_id) const;
 
   // Lazy activation: builds the descriptor and Bind()s it on first visit.
@@ -75,8 +93,12 @@ class AppGate final {
   MountedModule* FindByModule(std::wstring_view module_id);
 
   std::unique_ptr<ui::config::ResolvedUiDocument> document_;
+  std::uint64_t document_generation_ = 0;
+  std::unique_ptr<SettingsAccessService> settings_service_;
+  std::unique_ptr<ConfigTransactionService> config_service_;
   std::vector<MountedModule> mounted_;
   std::vector<RejectEntry> rejects_;
+  std::vector<CapabilityGrant> grants_;
   std::vector<std::pair<std::wstring, std::wstring>> action_map_;  // action -> moduleId
   std::wstring current_route_;
   void* operation_window_ = nullptr;

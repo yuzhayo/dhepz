@@ -51,7 +51,7 @@ struct PeerInfo {
 
 enum class ProcessOperation { Launch, ElevatedLaunch, Capture };
 
-enum class HostOperationKind { Launch, ElevatedLaunch, Capture, FolderProbe };
+enum class HostOperationKind { Launch, ElevatedLaunch, Capture, FolderProbe, ConfigSave };
 
 struct AsyncRequestToken {
   std::uint64_t value = 0;
@@ -101,6 +101,54 @@ struct HostOperationCompletion {
 
 using HostOperationCallback = std::function<void(const HostOperationCompletion& completion)>;
 
+struct ConfigPreviewToken {
+  std::uint64_t value = 0;
+
+  explicit operator bool() const { return value != 0; }
+  friend bool operator==(const ConfigPreviewToken&, const ConfigPreviewToken&) = default;
+};
+
+struct ConfigDiagnostic {
+  std::wstring file;
+  int line = 0;
+  int column = 0;
+  std::wstring message;
+};
+
+struct ConfigPreviewResult {
+  ConfigPreviewToken token;
+  std::vector<std::wstring> affected_routes;
+  std::vector<ConfigDiagnostic> diagnostics;
+};
+
+class SettingsAllFacet {
+ public:
+  virtual ~SettingsAllFacet() = default;
+  virtual core::Status ReadGlobal(std::wstring_view key, std::wstring* out) = 0;
+  virtual core::Status WriteGlobal(std::wstring_view key,
+                                   std::wstring_view value) = 0;
+  virtual core::Status ReadModule(std::wstring_view module_id,
+                                  std::wstring_view key,
+                                  std::wstring* out) = 0;
+  virtual core::Status WriteModule(std::wstring_view module_id,
+                                   std::wstring_view key,
+                                   std::wstring_view value) = 0;
+  virtual std::vector<PeerInfo> Peers() = 0;
+};
+
+class ConfigWriteFacet {
+ public:
+  virtual ~ConfigWriteFacet() = default;
+  virtual core::Status Preview(std::wstring_view candidate,
+                               ConfigPreviewResult* result) = 0;
+  virtual core::Status Save(ConfigPreviewToken preview,
+                            HostOperationCallback callback,
+                            AsyncRequestToken* request) = 0;
+  virtual core::Status Discard(
+      ConfigPreviewToken preview,
+      std::vector<std::wstring>* affected_routes) = 0;
+};
+
 // Parent hands down. Nothing else is reachable from a child.
 class ModuleHost {
  public:
@@ -130,6 +178,10 @@ class ModuleHost {
   // Called only from the UI-thread completion path. The parent owns routing
   // the patch to the presenter; a module never reaches frontend types.
   virtual core::Status PublishStatePatch(const json::Value& patch) = 0;
+  // Capability-specific facets. A host without the matching gate grant sets
+  // the output to null and returns PermissionDenied.
+  virtual core::Status GetSettingsAllFacet(SettingsAllFacet** facet) = 0;
+  virtual core::Status GetConfigWriteFacet(ConfigWriteFacet** facet) = 0;
   // Report success/error; the parent decides how to show it.
   virtual void ReportStatus(const core::Status& status) = 0;
   virtual void Log(std::wstring_view level, std::wstring_view text) = 0;

@@ -53,6 +53,23 @@ types, every signature and semantic becomes a contract.
    `ModuleHost::PublishStatePatch` from its UI-thread completion. The parent
    owns the patch sink and presenter routing; calling the seam from another
    thread is an error.
+10. Privileged reach uses two dedicated typed facets. `SettingsAllFacet` is
+    granted only to the module whose id is `settings`; it can read and write
+    global values and every module section and can enumerate inert peer
+    metadata. `ConfigWriteFacet` is granted only to `ui-editor`; it exposes
+    Preview, Save, and Discard rather than a filesystem API. A duplicate claim,
+    a claim by any other module id, or an undeclared facet request is denied by
+    the gate and recorded with module, capability, and source location.
+11. A config Preview resolves the complete candidate before changing the live
+    immutable document. A successful preview issues a monotonically increasing
+    token and reports only changed routes. A newer preview makes older tokens
+    stale. Discard swaps back the exact retained document without I/O. Save is
+    valid only for the active token and queues an atomic write on a parent
+    worker; its completion returns to the UI thread as `ConfigSave`.
+12. Settings and config files are parent-owned. Modules never receive a path or
+    call filesystem APIs. `AppGate` orchestrates grants and document ownership;
+    dedicated parent services implement settings access and config transaction
+    state.
 
 ## Consequences
 
@@ -63,5 +80,8 @@ types, every signature and semantic becomes a contract.
 - Process/folder IO is structurally outside the UI thread, and worker delivery
   state outlives a queued message safely during teardown without retaining a
   worker thread at idle.
+- Capability grants and denials are inspectable gate diagnostics. Config
+  preview remains exact and revertible, while persistence has one atomic,
+  off-UI-thread implementation owned by the parent.
 - Cost: adding a genuinely new service means growing `ModuleHost` for all
   modules — deliberately expensive, so it happens rarely and reviewed.
