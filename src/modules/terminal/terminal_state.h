@@ -25,4 +25,7 @@ class RecentFolders final {
   std::vector<std::wstring> folders_;
 };
 
+bool LoadVenvPreference(modules::ModuleHost& host);
+core::Status SaveVenvPreference(modules::ModuleHost& host, bool enabled);
+
 }  // namespace terminal

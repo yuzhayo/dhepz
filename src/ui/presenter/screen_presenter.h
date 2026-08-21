@@ -74,6 +74,10 @@ class ScreenPresenter final {
 
  private:
   void PaintNode(const layout::LayoutNode& node);
+  void PaintSuggestions();
+  void RebuildSuggestions(const config::ComponentNode* input,
+                          const render::Rect& bounds);
+  int SuggestionAt(float x, float y) const;
   void PaintTabs();
   bool ClickNode(const layout::LayoutNode& node, float x, float y);
   const config::ComponentNode* FindButton(const layout::LayoutNode& node, float x,
@@ -109,6 +113,9 @@ class ScreenPresenter final {
   std::vector<render::Rect> tab_rects_;
   std::vector<std::wstring> tab_routes_;
   std::vector<std::wstring> tab_labels_;
+  const config::ComponentNode* suggestion_input_ = nullptr;
+  std::vector<render::Rect> suggestion_rects_;
+  std::vector<std::wstring> suggestion_values_;
   int hover_tab_ = -1;
   int pressed_tab_ = -1;
   float caption_height_ = 0.0f;

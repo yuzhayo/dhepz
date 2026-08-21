@@ -141,6 +141,15 @@ struct FolderProbeResult {
   std::vector<RelativeFilePresence> files;
 };
 
+struct FolderPickerRequest {
+  std::wstring initial_directory;
+  std::wstring title;
+};
+
+struct FolderPickerResult {
+  std::wstring directory;
+};
+
 struct HostOperationCompletion {
   AsyncRequestToken token;
   std::uint64_t generation = 0;
@@ -227,6 +236,16 @@ class ModuleHost {
   virtual core::Status StartFolderProbe(const FolderProbeRequest& request,
                                         HostOperationCallback callback,
                                         AsyncRequestToken* token) = 0;
+  // User-mediated native dialog. This is intentionally synchronous: Show()
+  // owns its modal UI loop and performs no process or filesystem workload.
+  // The default preserves source compatibility for hosts that have no window.
+  virtual core::Status PickFolder(const FolderPickerRequest& request,
+                                  FolderPickerResult* result) {
+    (void)request;
+    (void)result;
+    return core::Err(core::ErrorCode::Unsupported,
+                     L"folder picker is not available");
+  }
   virtual void CancelRequest(AsyncRequestToken token) = 0;
   // Called only from the UI-thread completion path. The parent owns routing
   // the patch to the presenter; a module never reaches frontend types.

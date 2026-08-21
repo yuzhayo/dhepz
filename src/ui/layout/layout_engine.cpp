@@ -37,6 +37,14 @@ bool IsContainerLike(const std::wstring& type) {
          type == L"card" || type == L"tabs";
 }
 
+bool HasExplicitSize(const config::ComponentNode& node,
+                     std::wstring_view property, float* value) {
+  const json::Value* found = Property(node, property);
+  if (found == nullptr || !found->is_number()) return false;
+  *value = static_cast<float>(found->AsNumber());
+  return true;
+}
+
 }  // namespace
 
 render::Size LayoutEngine::MeasureText(const config::ComponentNode& node,
@@ -145,6 +153,7 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::
     const float gap = static_cast<float>(node.GetInt(L"gap", 8));
     const std::wstring direction = node.GetString(L"direction", L"column");
     const bool row = direction == L"row";
+    const std::wstring align = node.GetString(L"align", L"stretch");
     // grid/flow land with the first screen that needs them; column until then.
     render::Rect content{available.x + padding.left, available.y + padding.top,
                          available.width - padding.left - padding.right,
@@ -160,6 +169,28 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::
         child_available.height = std::max(0.0f, content.bottom() - cursor);
       }
       LayoutNode child_node = Build(child, child_available, model);
+      float explicit_width = 0.0f;
+      float explicit_height = 0.0f;
+      const bool has_width = HasExplicitSize(child, L"width", &explicit_width);
+      const bool has_height = HasExplicitSize(child, L"height", &explicit_height);
+      if (has_width) {
+        child_node.bounds.width =
+            std::min(std::max(0.0f, explicit_width), child_available.width);
+      } else if (!row && align == L"stretch") {
+        child_node.bounds.width = child_available.width;
+      }
+      if (has_height) {
+        child_node.bounds.height =
+            std::min(std::max(0.0f, explicit_height), child_available.height);
+      } else if (row && align == L"stretch") {
+        child_node.bounds.height = child_available.height;
+      }
+      if (!row && align == L"center") {
+        child_node.bounds.x = content.x +
+                              (content.width - child_node.bounds.width) / 2.0f;
+      } else if (!row && align == L"end") {
+        child_node.bounds.x = content.right() - child_node.bounds.width;
+      }
       cursor += (row ? child_node.bounds.width : child_node.bounds.height) + gap;
       out.children.push_back(std::move(child_node));
     }

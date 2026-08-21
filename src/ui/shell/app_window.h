@@ -50,7 +50,7 @@ class AppWindow final {
 
   // Content size in logical pixels; the window itself is larger by the
   // shadow margin on each side.
-  bool Create(void* instance, float content_width = 960.0f, float content_height = 640.0f);
+  bool Create(void* instance, float content_width = 430.0f, float content_height = 430.0f);
 
   // Renders a full frame offscreen, then shows. Idempotent while visible.
   void Show();

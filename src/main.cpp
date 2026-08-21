@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <ole2.h>
 #include <shellapi.h>
 
 #include <algorithm>
@@ -99,8 +100,9 @@ int RunValidateEmbedded() {
                  gate.Rejects().size());
     return 1;
   }
-  if (!gate.Mounted(L"terminal") || !gate.Mounted(L"diagnostics")) {
-    std::wprintf(L"embedded UI omitted terminal or diagnostics\n");
+  if (gate.Peers().empty() || gate.document() == nullptr ||
+      gate.document()->routes().empty()) {
+    std::wprintf(L"embedded UI contains no usable modules or routes\n");
     return 1;
   }
   std::wprintf(L"embedded UI ok: %zu module(s), %zu route(s)\n",
@@ -152,10 +154,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   const std::int64_t process_entry_qpc = trace::CurrentQpc();
   trace::PerformanceTraceSession session(process_entry_qpc);
 
+  const HRESULT ole_status = OleInitialize(nullptr);
+  if (FAILED(ole_status)) {
+    return BootstrapFailed(
+        11, core::Err(core::ErrorCode::Internal,
+                      L"Windows UI services could not be initialized"));
+  }
+
   application::ProductionApplication application;
   const core::Status started = application.Start(instance, tray_only);
-  if (!started.ok()) return BootstrapFailed(10, started);
+  if (!started.ok()) {
+    OleUninitialize();
+    return BootstrapFailed(10, started);
+  }
   const int result = application.Run();
   application.Shutdown();
+  OleUninitialize();
   return result;
 }

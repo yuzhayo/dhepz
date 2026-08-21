@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "modules/gate/config_transaction_service.h"
+#include "modules/gate/folder_picker.h"
 #include "modules/gate/host_operation_dispatcher.h"
 #include "modules/gate/settings_access_service.h"
 
@@ -27,7 +28,8 @@ GateHost::GateHost(std::wstring module_id,
       settings_service_(settings_service),
       config_service_(config_service),
       settings_all_granted_(settings_all_granted),
-      config_write_granted_(config_write_granted) {
+      config_write_granted_(config_write_granted),
+      operation_window_(operation_window) {
   if (operation_window == nullptr || operation_message == 0) return;
 
   StatePatchSink sink;
@@ -90,6 +92,11 @@ core::Status GateHost::StartFolderProbe(const FolderProbeRequest& request,
                      L"async folder host is not configured");
   }
   return operations_->StartFolderProbe(request, std::move(callback), token);
+}
+
+core::Status GateHost::PickFolder(const FolderPickerRequest& request,
+                                  FolderPickerResult* result) {
+  return ShowNativeFolderPicker(operation_window_, request, result);
 }
 
 void GateHost::CancelRequest(AsyncRequestToken token) {

@@ -1,7 +1,6 @@
 # ADR 0002 — Parent-owned asynchronous settings persistence
 
-Status: accepted (Integration Checkpoint IC-03). Links: `.docs/plan.md` Part 3,
-decision 13; `docs/audit.md` H-12.
+Status: accepted. Canonical product plan: `docs/plan.md`.
 
 ## Context
 

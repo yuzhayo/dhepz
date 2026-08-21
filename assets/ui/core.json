@@ -74,6 +74,12 @@
       "enabled": {
         "kind": "bool",
         "default": true
+      },
+      "width": {
+        "kind": "int"
+      },
+      "height": {
+        "kind": "int"
       }
     }
   },
@@ -271,6 +277,9 @@
     "input": {
       "properties": {
         "value_binding": {
+          "kind": "binding"
+        },
+        "suggestions_binding": {
           "kind": "binding"
         },
         "mode": {

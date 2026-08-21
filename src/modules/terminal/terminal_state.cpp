@@ -7,6 +7,7 @@ namespace {
 
 constexpr std::wstring_view kRecentKey = L"recent_folders";
 constexpr std::size_t kRecentCap = 10;
+constexpr std::wstring_view kVenvEnabledKey = L"venv_enabled";
 
 }  // namespace
 
@@ -46,6 +47,15 @@ core::Status RecentFolders::Save(modules::ModuleHost& host) const {
     array.Append(json::Value::String(folder));
   }
   return host.SettingsWrite(kRecentKey, json::Serialize(array, false));
+}
+
+bool LoadVenvPreference(modules::ModuleHost& host) {
+  std::wstring stored;
+  return host.SettingsRead(kVenvEnabledKey, &stored).ok() && stored == L"true";
+}
+
+core::Status SaveVenvPreference(modules::ModuleHost& host, bool enabled) {
+  return host.SettingsWrite(kVenvEnabledKey, enabled ? L"true" : L"false");
 }
 
 }  // namespace terminal

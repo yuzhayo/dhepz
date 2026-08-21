@@ -1,6 +1,6 @@
 # ADR 0001 — The module contract and parent-owned services
 
-Status: accepted (Phase 3, issue #81). Links: `.docs/plan.md` Part 3.
+Status: accepted. Canonical product plan: `docs/plan.md`.
 
 ## Context
 
@@ -38,6 +38,10 @@ types, every signature and semantic becomes a contract.
    directory and a list of safe relative file names. Completion reports the
    normalized directory, directory presence, and presence of exactly those
    files. It never exposes file contents or general filesystem access.
+   A separate `PickFolder` request opens the parent-owned native folder dialog
+   for an explicit user action and returns only the selected filesystem path.
+   The dialog's modal UI loop is synchronous; it performs no child-owned I/O or
+   process work and contains no feature-specific policy.
 7. Starting either operation is nonblocking. A successful start returns a
    parent-issued request token; malformed input is rejected synchronously with
    `Status`. OS work runs on a run-once worker. Completion is posted to the UI

@@ -1,7 +1,6 @@
 # ADR 0003 — Module runtime quarantine and window lifetime
 
-Status: accepted (Integration Checkpoint IC-05). Links: `.docs/plan.md` Part 3;
-issue #109.
+Status: accepted. Canonical product plan: `docs/plan.md`.
 
 ## Context
 

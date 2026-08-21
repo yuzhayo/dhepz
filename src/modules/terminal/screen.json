@@ -5,20 +5,40 @@
       "route_id": "terminal",
       "module_id": "terminal",
       "tab_label": "Terminal",
-      "show_in_tabs": true,
+      "show_in_tabs": false,
       "children": [
-        { "type": "text", "text": "Terminal", "variant": "title" },
-        { "type": "input", "id": "working-folder", "value_binding": "working_folder", "placeholder": "Working folder" },
-        { "type": "button", "id": "validate-folder", "label": "Validate folder", "action": "terminal:select-folder", "action_payload": { "folder": { "$bind": "working_folder" } } },
-        { "type": "combo", "items_binding": "recent_folders", "selected_value_binding": "working_folder", "placeholder": "Recent folders" },
-        { "type": "toggle", "id": "admin-toggle", "label": "Run as administrator", "checked_binding": "admin" },
-        { "type": "toggle", "id": "venv-toggle", "label": "Use virtual environment", "checked_binding": "venv_enabled", "visible": { "$bind": "venv_available" } },
-        { "type": "combo", "items_binding": "wsl_distros", "selected_value_binding": "wsl_distro", "placeholder": "WSL distro" },
-        { "type": "button", "id": "refresh-wsl", "label": "Refresh WSL", "action": "terminal:refresh-wsl", "action_payload": {} },
-        { "type": "button", "id": "launch-powershell", "label": "PowerShell", "enabled": { "$bind": "launch_enabled" }, "action": "terminal:launch", "action_payload": { "shell": "powershell", "admin": { "$bind": "admin" }, "working_folder": { "$bind": "working_folder" }, "venv_enabled": { "$bind": "venv_enabled" }, "venv": { "$bind": "powershell_venv" } } },
-        { "type": "button", "id": "launch-cmd", "label": "Cmd", "enabled": { "$bind": "launch_enabled" }, "action": "terminal:launch", "action_payload": { "shell": "cmd", "admin": { "$bind": "admin" }, "working_folder": { "$bind": "working_folder" }, "venv_enabled": { "$bind": "venv_enabled" }, "venv": { "$bind": "cmd_venv" } } },
-        { "type": "button", "id": "launch-wsl", "label": "WSL", "enabled": { "$bind": "launch_enabled" }, "action": "terminal:launch", "action_payload": { "shell": "wsl", "admin": false, "wsl_distro": { "$bind": "wsl_distro" }, "working_folder": null, "venv_enabled": false, "venv": null } },
-        { "type": "text", "text": { "$bind": "status" }, "variant": "caption" }
+        {
+          "type": "container",
+          "direction": "column",
+          "gap": 10,
+          "padding": { "left": 24, "top": 20, "right": 24, "bottom": 20 },
+          "children": [
+            { "type": "text", "text": "Quick Actions", "variant": "title", "align": "center" },
+            {
+              "type": "container",
+              "direction": "row",
+              "gap": 8,
+              "children": [
+                { "type": "input", "id": "working-folder", "width": 325, "value_binding": "working_folder", "suggestions_binding": "recent_folders", "placeholder": "Folder path" },
+                { "type": "button", "id": "browse-folder", "width": 48, "label": "...", "action": "terminal:browse-folder", "action_payload": { "initial_folder": { "$bind": "working_folder" } } }
+              ]
+            },
+            { "type": "toggle", "id": "venv-toggle", "label": "Check / install virtual environment", "checked_binding": "venv_enabled" },
+            { "type": "button", "id": "launch-powershell-admin", "height": 46, "label": "PowerShell Admin", "enabled": { "$bind": "launch_enabled" }, "action": "terminal:launch", "action_payload": { "target": "powershell_admin", "working_folder": { "$bind": "working_folder" }, "venv_enabled": { "$bind": "venv_enabled" } } },
+            { "type": "button", "id": "launch-powershell", "height": 46, "label": "PowerShell", "enabled": { "$bind": "launch_enabled" }, "action": "terminal:launch", "action_payload": { "target": "powershell", "working_folder": { "$bind": "working_folder" }, "venv_enabled": { "$bind": "venv_enabled" } } },
+            {
+              "type": "container",
+              "direction": "row",
+              "gap": 8,
+              "children": [
+                { "type": "combo", "id": "wsl-distro", "width": 325, "items_binding": "wsl_distros", "selected_value_binding": "wsl_distro", "placeholder": "WSL distro" },
+                { "type": "button", "id": "refresh-wsl", "width": 48, "label": "R", "action": "terminal:refresh-wsl", "action_payload": {} }
+              ]
+            },
+            { "type": "button", "id": "launch-wsl", "height": 46, "label": "WSL", "enabled": { "$bind": "launch_enabled" }, "action": "terminal:launch", "action_payload": { "target": "wsl", "wsl_distro": { "$bind": "wsl_distro" }, "working_folder": { "$bind": "working_folder" }, "venv_enabled": { "$bind": "venv_enabled" } } },
+            { "type": "text", "text": { "$bind": "status" }, "variant": "caption", "align": "center" }
+          ]
+        }
       ]
     }
   ]

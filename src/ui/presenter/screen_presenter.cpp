@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cwctype>
 
 #include "ui/layout/backdrop.h"
 
@@ -71,6 +72,7 @@ bool NamedBindingReferences(std::wstring_view property,
                             const json::Value& value,
                             const std::vector<std::wstring>& changed) {
   if (property != L"value_binding" && property != L"items_binding" &&
+      property != L"suggestions_binding" &&
       property != L"selected_value_binding" &&
       property != L"checked_binding" &&
       property != L"selected_id_binding") {
@@ -105,6 +107,9 @@ void ScreenPresenter::SetDocument(const config::ResolvedUiDocument* document) {
   document_ = document;
   focus_.SetDocument(document);
   route_.clear();
+  suggestion_input_ = nullptr;
+  suggestion_rects_.clear();
+  suggestion_values_.clear();
   if (document_ != nullptr) {
     route_ = document_->initial_route();
     focus_.EnterRoute(route_);
@@ -147,7 +152,10 @@ void ScreenPresenter::Prepare(const render::Rect& content) {
     tab_labels_.push_back(label);
     cursor_x += size.width + 28.0f;
   }
-  tab_strip_height_ = tab_rects_.empty() ? 0.0f : caption_height_ + 36.0f;
+  // Content always begins below the draggable caption. Routes with tabs add
+  // one strip beneath it; a tabless single-feature route does not draw one.
+  tab_strip_height_ =
+      caption_height_ + (tab_rects_.empty() ? 0.0f : 36.0f);
 
   const render::Size size{content.width, content.height - tab_strip_height_};
   const config::Route* route = document_->FindRoute(route_);
@@ -196,6 +204,7 @@ void ScreenPresenter::Paint(const render::Rect& content) {
 
   backend_->PushTranslation({content.x, content.y + tab_strip_height_});
   PaintNode(*last_tree_);
+  PaintSuggestions();
   backend_->PopTranslation();
 }
 
@@ -208,6 +217,7 @@ int ScreenPresenter::TabAt(float x, float y) const {
 
 bool ScreenPresenter::HitTestContent(float x, float y) const {
   if (y >= caption_height_ && y < tab_strip_height_) return TabAt(x, y) >= 0;
+  if (SuggestionAt(x, y - tab_strip_height_) >= 0) return true;
   return last_tree_ != nullptr &&
          FindButton(*last_tree_, x, y - tab_strip_height_) != nullptr;
 }
@@ -257,7 +267,9 @@ bool ScreenPresenter::ClickNode(const layout::LayoutNode& node, float x, float y
   const std::wstring id = focus_.IdFor(route_, source);
   bool handled = !id.empty() && focus_.SetFocus(route_, id);
   const std::wstring& type = source->type();
-  if (type == L"combo") {
+  if (type == L"input" && source->Property(L"suggestions_binding") != nullptr) {
+    RebuildSuggestions(source, node.bounds);
+  } else if (type == L"combo") {
     const json::Value* items_binding = source->Property(L"items_binding");
     const json::Value* selected_binding =
         source->Property(L"selected_value_binding");
@@ -395,6 +407,23 @@ bool ScreenPresenter::HandleClick(float x, float y) {
     return tab >= 0;
   }
   if (last_tree_ == nullptr) return false;
+  const int suggestion = SuggestionAt(x, y - tab_strip_height_);
+  if (suggestion >= 0 && suggestion_input_ != nullptr) {
+    const json::Value* binding = suggestion_input_->Property(L"value_binding");
+    if (binding != nullptr && binding->is_string()) {
+      json::Value patch = json::Value::Object();
+      patch.Set(binding->AsString(),
+                json::Value::String(suggestion_values_[suggestion]));
+      (void)ApplyStatePatch(route_, patch);
+    }
+    suggestion_input_ = nullptr;
+    suggestion_rects_.clear();
+    suggestion_values_.clear();
+    return true;
+  }
+  suggestion_input_ = nullptr;
+  suggestion_rects_.clear();
+  suggestion_values_.clear();
   pressed_node_ = nullptr;
   return ClickNode(*last_tree_, x, y - tab_strip_height_);
 }
@@ -405,9 +434,13 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
     if (!ResolvedBool(*source, L"visible", true)) return;
     const std::wstring& type = source->type();
     if (type == L"text") {
+      render::TextAlign align = render::TextAlign::Left;
+      const std::wstring requested = source->GetString(L"align", L"start");
+      if (requested == L"center") align = render::TextAlign::Center;
+      else if (requested == L"end") align = render::TextAlign::Right;
       backend_->DrawTextRun(ResolvedString(*source, L"text"), node.bounds,
                             StyleForText(*source),
-                            Token(L"text", {255, 255, 255, 255}), render::TextAlign::Left,
+                            Token(L"text", {255, 255, 255, 255}), align,
                             render::VerticalAlign::Top);
     } else if (type == L"button") {
       // Tab-state model: idle shows only a gray outline; hover brightens the
@@ -495,6 +528,69 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
   }
 }
 
+void ScreenPresenter::RebuildSuggestions(
+    const config::ComponentNode* input, const render::Rect& bounds) {
+  suggestion_input_ = input;
+  suggestion_rects_.clear();
+  suggestion_values_.clear();
+  if (input == nullptr) return;
+  const json::Value* source = input->Property(L"suggestions_binding");
+  if (source == nullptr || !source->is_string()) return;
+  const json::Value* values = ResolveBinding(route_, source->AsString());
+  if (values == nullptr || !values->is_array()) return;
+
+  std::wstring filter;
+  if (const json::Value* binding = input->Property(L"value_binding");
+      binding != nullptr && binding->is_string()) {
+    if (const json::Value* current = ResolveBinding(route_, binding->AsString());
+        current != nullptr && current->is_string()) {
+      filter = current->AsString();
+      std::transform(filter.begin(), filter.end(), filter.begin(),
+                     [](wchar_t character) {
+                       return static_cast<wchar_t>(std::towlower(character));
+                     });
+    }
+  }
+  for (const json::Value& value : values->items()) {
+    if (!value.is_string()) continue;
+    std::wstring candidate = value.AsString();
+    std::wstring folded = candidate;
+    std::transform(folded.begin(), folded.end(), folded.begin(),
+                   [](wchar_t character) {
+                     return static_cast<wchar_t>(std::towlower(character));
+                   });
+    if (!filter.empty() && folded.find(filter) == std::wstring::npos) continue;
+    suggestion_values_.push_back(std::move(candidate));
+    if (suggestion_values_.size() == 6) break;
+  }
+  for (std::size_t i = 0; i < suggestion_values_.size(); ++i) {
+    suggestion_rects_.push_back(
+        {bounds.x, bounds.bottom() + static_cast<float>(i) * 30.0f,
+         bounds.width, 30.0f});
+  }
+}
+
+int ScreenPresenter::SuggestionAt(float x, float y) const {
+  for (std::size_t i = 0; i < suggestion_rects_.size(); ++i) {
+    if (suggestion_rects_[i].contains({x, y})) return static_cast<int>(i);
+  }
+  return -1;
+}
+
+void ScreenPresenter::PaintSuggestions() {
+  for (std::size_t i = 0; i < suggestion_rects_.size(); ++i) {
+    backend_->FillRect(suggestion_rects_[i],
+                       Token(L"surfaceAlt", {35, 39, 48, 255}));
+    backend_->StrokeRect(suggestion_rects_[i],
+                         Token(L"borderStrong", {70, 76, 88, 255}), 1.0f);
+    backend_->DrawTextRun(suggestion_values_[i], suggestion_rects_[i],
+                          render::TextStyle{},
+                          Token(L"text", {255, 255, 255, 255}),
+                          render::TextAlign::Left,
+                          render::VerticalAlign::Middle);
+  }
+}
+
 bool ScreenPresenter::HandleKey(int virtual_key) {
   if (virtual_key == VK_BACK) return EditFocusedInput(0, true);
   if (virtual_key != VK_TAB) return false;
@@ -531,7 +627,13 @@ bool ScreenPresenter::EditFocusedInput(wchar_t character, bool backspace) {
   }
   json::Value patch = json::Value::Object();
   patch.Set(binding->AsString(), json::Value::String(std::move(value)));
-  return ApplyStatePatch(route_, patch).ok();
+  const bool applied = ApplyStatePatch(route_, patch).ok();
+  if (applied && last_tree_ != nullptr) {
+    const layout::LayoutNode* layout_node =
+        FindNodeById(*last_tree_, node->id());
+    if (layout_node != nullptr) RebuildSuggestions(node, layout_node->bounds);
+  }
+  return applied;
 }
 
 const json::Value* ScreenPresenter::ViewStateValue(

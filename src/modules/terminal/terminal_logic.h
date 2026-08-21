@@ -1,6 +1,5 @@
-// Pure terminal launch modelling. It parses screen payload data into a typed
-// spec and emits the parent contract's executable + argv request. Quoting and
-// process creation remain parent-owned.
+// Pure terminal launch modelling. The child chooses terminal policy; the
+// parent receives only a structured executable + argv request.
 #pragma once
 
 #include <string>
@@ -11,20 +10,13 @@
 
 namespace terminal {
 
-enum class Shell { PowerShell, Cmd, Wsl };
-enum class PathKind { None, Windows, Linux };
-
-struct VenvSelection {
-  PathKind kind = PathKind::None;
-  std::wstring activate_path;
-};
+enum class Target { PowerShell, PowerShellAdmin, Wsl };
 
 struct LaunchSpec {
-  Shell shell = Shell::PowerShell;
-  std::wstring working_dir;
+  Target target = Target::PowerShell;
+  std::wstring working_folder;
   std::wstring wsl_distro;
-  bool admin = false;
-  VenvSelection venv;
+  bool venv_enabled = false;
 };
 
 core::Status ParseLaunchPayload(const json::Value& payload, LaunchSpec* out);

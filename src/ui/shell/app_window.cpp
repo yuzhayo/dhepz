@@ -80,10 +80,18 @@ bool AppWindow::Create(void* instance, float content_width, float content_height
 
   const int width = static_cast<int>(content_width + kShadowMargin * 2);
   const int height = static_cast<int>(content_height + kShadowMargin * 2);
+  RECT work_area{};
+  SystemParametersInfoW(SPI_GETWORKAREA, 0, &work_area, 0);
+  const int work_width = static_cast<int>(work_area.right - work_area.left);
+  const int work_height = static_cast<int>(work_area.bottom - work_area.top);
+  const int x = static_cast<int>(work_area.left) +
+                std::max(0, (work_width - width) / 2);
+  const int y = static_cast<int>(work_area.top) +
+                std::max(0, (work_height - height) / 2);
   hwnd_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_APPWINDOW, window_class.lpszClassName,
                           title_.c_str(),
-                          WS_POPUP | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
-                          CW_USEDEFAULT, CW_USEDEFAULT, width, height, nullptr, nullptr,
+                          WS_POPUP | WS_THICKFRAME | WS_SYSMENU,
+                          x, y, width, height, nullptr, nullptr,
                           static_cast<HINSTANCE>(instance), this);
   if (hwnd_ == nullptr) {
     return false;
@@ -167,8 +175,8 @@ void AppWindow::set_message_handler(
 }
 
 int AppWindow::ButtonCount() const {
-  // Left-to-right: pin, [settings], close. Minimise/maximise arrive later
-  // as a user toggle; the window is already resizable.
+  // Left-to-right: pin, [settings], close. The window remains resizable;
+  // minimise/maximise caption actions are intentionally not part of this UI.
   return settings_handler_ ? 3 : 2;
 }
 
@@ -579,8 +587,8 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
           DefWindowProcW(window, message, static_cast<WPARAM>(wparam), static_cast<LPARAM>(lparam));
       auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
       const int margin = maximized() ? 0 : Px(kShadowMargin) * 2;
-      info->ptMinTrackSize.x = Px(320.0f) + margin;
-      info->ptMinTrackSize.y = Px(200.0f) + margin;
+      info->ptMinTrackSize.x = Px(360.0f) + margin;
+      info->ptMinTrackSize.y = Px(360.0f) + margin;
       return result;
     }
     case WM_CLOSE:

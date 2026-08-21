@@ -57,6 +57,8 @@ class GateHost final : public ModuleHost,
   core::Status StartFolderProbe(const FolderProbeRequest& request,
                                 HostOperationCallback callback,
                                 AsyncRequestToken* token) override;
+  core::Status PickFolder(const FolderPickerRequest& request,
+                          FolderPickerResult* result) override;
   void CancelRequest(AsyncRequestToken token) override;
   core::Status PublishStatePatch(const json::Value& patch) override;
   core::Status GetSettingsAllFacet(SettingsAllFacet** facet) override;
@@ -94,6 +96,7 @@ class GateHost final : public ModuleHost,
   ConfigTransactionService* config_service_;
   bool settings_all_granted_ = false;
   bool config_write_granted_ = false;
+  void* operation_window_ = nullptr;
   ModuleSurface surface_;
   std::mutex mutex_;
   std::vector<std::wstring> log_;

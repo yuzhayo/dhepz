@@ -1,20 +1,17 @@
-// Terminal feature coordinator. Every process, settings, and filesystem
-// operation crosses the narrow parent contract and completes on the UI thread.
+// Terminal child feature. It owns selection, venv and Windows Terminal policy;
+// all OS effects cross the generic parent ModuleHost contract.
 #include "modules/contract/module_contract.h"
-#include "modules/registry/module_registry.h"
 #include "modules/terminal/terminal_logic.h"
 #include "modules/terminal/terminal_state.h"
+#include "modules/terminal/venv.h"
 #include "modules/terminal/wsl.h"
 
-#include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace terminal {
 namespace {
-
-constexpr std::wstring_view kPowerShellVenv = L".venv\\Scripts\\Activate.ps1";
-constexpr std::wstring_view kCmdVenv = L".venv\\Scripts\\activate.bat";
 
 json::Value StringArray(const std::vector<std::wstring>& values) {
   json::Value array = json::Value::Array();
@@ -24,39 +21,21 @@ json::Value StringArray(const std::vector<std::wstring>& values) {
   return array;
 }
 
-json::Value WindowsVenv(std::wstring_view directory,
-                        std::wstring_view relative) {
-  json::Value venv = json::Value::Object();
-  venv.Set(L"kind", json::Value::String(L"windows"));
-  venv.Set(L"activate_path",
-           json::Value::String(std::wstring(directory) + L"\\" +
-                               std::wstring(relative)));
-  return venv;
-}
-
-bool HasFile(const modules::FolderProbeResult& folder,
-             std::wstring_view relative) {
-  for (const modules::RelativeFilePresence& file : folder.files) {
-    if (file.relative_path == relative) return file.present;
-  }
-  return false;
-}
-
 class TerminalModule final : public modules::ModuleDescriptor {
  public:
   std::wstring_view ModuleId() const override { return L"terminal"; }
   std::wstring_view TabLabel() const override { return L"Terminal"; }
   int Order() const override { return 10; }
-  bool ShowInTabs() const override { return true; }
+  bool ShowInTabs() const override { return false; }
   std::wstring_view SettingsRoute() const override { return {}; }
   std::vector<std::wstring> DeclaredActions() const override {
-    return {L"terminal:launch", L"terminal:select-folder",
+    return {L"terminal:launch", L"terminal:browse-folder",
             L"terminal:refresh-wsl"};
   }
   std::vector<std::wstring> DeclaredBindings() const override {
-    return {L"working_folder", L"recent_folders", L"wsl_distros", L"wsl_distro",
-            L"admin", L"powershell_venv", L"cmd_venv", L"venv_available",
-            L"venv_enabled", L"busy", L"status", L"launch_enabled"};
+    return {L"working_folder", L"recent_folders", L"wsl_distros",
+            L"wsl_distro", L"venv_enabled", L"busy", L"status",
+            L"launch_enabled"};
   }
   std::vector<std::wstring> DeclaredCapabilities() const override { return {}; }
 
@@ -70,8 +49,7 @@ class TerminalModule final : public modules::ModuleDescriptor {
     modules::AsyncRequestToken token;
     const core::Status started = host_->StartSettingsLoad(
         [this, generation](const modules::HostOperationCompletion& completion) {
-          if (host_ == nullptr || generation != generation_ ||
-              completion.token != settings_token_ ||
+          if (!IsCurrent(generation, completion.token, settings_token_) ||
               completion.kind != modules::HostOperationKind::SettingsLoad) {
             return;
           }
@@ -81,10 +59,15 @@ class TerminalModule final : public modules::ModuleDescriptor {
             return;
           }
           recents_.Load(*host_);
+          const bool venv_enabled = LoadVenvPreference(*host_);
           json::Value patch = json::Value::Object();
           patch.Set(L"recent_folders", StringArray(recents_.List()));
-          const core::Status published = host_->PublishStatePatch(patch);
-          if (!published.ok()) host_->ReportStatus(published);
+          patch.Set(L"venv_enabled", json::Value::Bool(venv_enabled));
+          if (!recents_.List().empty()) {
+            patch.Set(L"working_folder",
+                      json::Value::String(recents_.List().front()));
+          }
+          Publish(std::move(patch));
         },
         &token);
     if (started.ok()) {
@@ -92,6 +75,7 @@ class TerminalModule final : public modules::ModuleDescriptor {
     } else if (started.Code() != core::ErrorCode::Unsupported) {
       host_->ReportStatus(started);
     }
+
     const core::Status wsl_started = wsl_.Bind(host);
     if (!wsl_started.ok()) host_->ReportStatus(wsl_started);
     return core::Ok();
@@ -101,10 +85,11 @@ class TerminalModule final : public modules::ModuleDescriptor {
                       json::Value* state_patch) override {
     if (host_ == nullptr || state_patch == nullptr) {
       return core::Err(core::ErrorCode::InvalidArgument,
-                       L"terminal module is not bound or patch output is missing");
+                       L"terminal module is not bound");
     }
-    if (action == L"terminal:select-folder") {
-      return SelectFolder(payload, state_patch);
+    *state_patch = json::Value::Object();
+    if (action == L"terminal:browse-folder") {
+      return Browse(payload, state_patch);
     }
     if (action == L"terminal:refresh-wsl") {
       return wsl_.Refresh(state_patch);
@@ -112,198 +97,218 @@ class TerminalModule final : public modules::ModuleDescriptor {
     if (action != L"terminal:launch") {
       return core::Err(core::ErrorCode::NotFound, L"terminal: unknown action");
     }
-    return Launch(payload, state_patch);
+    return BeginLaunch(payload, state_patch);
   }
 
   void Release() override {
     ++generation_;
     if (host_ != nullptr) {
       if (settings_token_) host_->CancelRequest(settings_token_);
-      if (folder_token_) host_->CancelRequest(folder_token_);
-      for (modules::AsyncRequestToken token : launch_tokens_) {
-        host_->CancelRequest(token);
-      }
+      if (operation_token_) host_->CancelRequest(operation_token_);
     }
     settings_token_ = {};
-    folder_token_ = {};
-    launch_tokens_.clear();
+    operation_token_ = {};
+    pending_ = {};
     wsl_.Release();
     host_ = nullptr;
   }
 
  private:
+  bool IsCurrent(std::uint64_t generation, modules::AsyncRequestToken actual,
+                 modules::AsyncRequestToken expected) const {
+    return host_ != nullptr && generation == generation_ && actual == expected;
+  }
+
+  void Publish(json::Value patch) {
+    const core::Status published = host_->PublishStatePatch(patch);
+    if (!published.ok()) host_->ReportStatus(published);
+  }
+
   void PublishDefaults() {
     json::Value patch = json::Value::Object();
     patch.Set(L"working_folder", json::Value::String(L""));
     patch.Set(L"recent_folders", json::Value::Array());
     wsl_.WriteDefaults(&patch);
-    patch.Set(L"admin", json::Value::Bool(false));
-    patch.Set(L"powershell_venv", json::Value::Null());
-    patch.Set(L"cmd_venv", json::Value::Null());
-    patch.Set(L"venv_available", json::Value::Bool(false));
     patch.Set(L"venv_enabled", json::Value::Bool(false));
     patch.Set(L"busy", json::Value::Bool(false));
     patch.Set(L"status", json::Value::String(L"Ready"));
     patch.Set(L"launch_enabled", json::Value::Bool(true));
-    const core::Status published = host_->PublishStatePatch(patch);
-    if (!published.ok() && published.Code() != core::ErrorCode::Unsupported) {
-      host_->ReportStatus(published);
-    }
+    Publish(std::move(patch));
   }
 
-  core::Status SelectFolder(const json::Value& payload,
-                            json::Value* state_patch) {
-    if (!payload.is_object()) {
-      return core::Err(core::ErrorCode::InvalidArgument,
-                       L"folder selection payload must be an object");
+  core::Status Browse(const json::Value& payload, json::Value* state_patch) {
+    modules::FolderPickerRequest request;
+    request.title = L"Choose a folder for the terminal";
+    if (payload.is_object()) {
+      if (const json::Value* initial = payload.Find(L"initial_folder");
+          initial != nullptr && initial->is_string()) {
+        request.initial_directory = initial->AsString();
+      }
     }
-    const json::Value* folder = payload.Find(L"folder");
-    if (folder == nullptr || !folder->is_string() || folder->AsString().empty()) {
-      return core::Err(core::ErrorCode::InvalidArgument,
-                       L"folder selection requires a non-empty folder");
-    }
-    const std::uint64_t selection = ++folder_selection_;
-    const std::uint64_t generation = generation_;
-    if (folder_token_) host_->CancelRequest(folder_token_);
-    modules::FolderProbeRequest request;
-    request.directory = folder->AsString();
-    request.relative_files = {std::wstring(kPowerShellVenv), std::wstring(kCmdVenv)};
-
-    *state_patch = json::Value::Object();
-    state_patch->Set(L"busy", json::Value::Bool(true));
-    state_patch->Set(L"launch_enabled", json::Value::Bool(false));
-    state_patch->Set(L"status", json::Value::String(L"Validating folder..."));
-    modules::AsyncRequestToken token;
-    const core::Status started = host_->StartFolderProbe(
-        request,
-        [this, generation, selection](
-            const modules::HostOperationCompletion& completion) {
-          if (host_ == nullptr || generation != generation_ ||
-              selection != folder_selection_ ||
-              completion.token != folder_token_ ||
-              completion.kind != modules::HostOperationKind::FolderProbe) {
-            return;
-          }
-          folder_token_ = {};
-          json::Value patch = json::Value::Object();
-          patch.Set(L"busy", json::Value::Bool(false));
-          if (!completion.status.ok() || !completion.folder.directory_exists) {
-            const core::Status failure = !completion.status.ok()
-                ? completion.status
-                : core::Err(core::ErrorCode::NotFound,
-                            L"folder does not exist or is inaccessible");
-            patch.Set(L"launch_enabled", json::Value::Bool(false));
-            patch.Set(L"powershell_venv", json::Value::Null());
-            patch.Set(L"cmd_venv", json::Value::Null());
-            patch.Set(L"venv_available", json::Value::Bool(false));
-            patch.Set(L"venv_enabled", json::Value::Bool(false));
-            patch.Set(L"status", json::Value::String(failure.Message()));
-            host_->ReportStatus(failure);
-          } else {
-            const bool powershell_available =
-                HasFile(completion.folder, kPowerShellVenv);
-            const bool cmd_available = HasFile(completion.folder, kCmdVenv);
-            patch.Set(L"working_folder",
-                      json::Value::String(completion.folder.normalized_directory));
-            patch.Set(L"venv_available",
-                      json::Value::Bool(powershell_available || cmd_available));
-            patch.Set(L"venv_enabled", json::Value::Bool(false));
-            patch.Set(L"powershell_venv",
-                      powershell_available
-                          ? WindowsVenv(completion.folder.normalized_directory,
-                                        kPowerShellVenv)
-                          : json::Value::Null());
-            patch.Set(L"cmd_venv",
-                      cmd_available
-                          ? WindowsVenv(completion.folder.normalized_directory,
-                                        kCmdVenv)
-                          : json::Value::Null());
-            patch.Set(L"launch_enabled", json::Value::Bool(true));
-            patch.Set(L"status", json::Value::String(L"Folder ready"));
-            host_->ReportStatus(core::Ok());
-          }
-          const core::Status published = host_->PublishStatePatch(patch);
-          if (!published.ok()) host_->ReportStatus(published);
-        },
-        &token);
-    if (!started.ok()) {
-      state_patch->Set(L"busy", json::Value::Bool(false));
-      state_patch->Set(L"status", json::Value::String(started.Message()));
-      return started;
-    }
-    folder_token_ = token;
+    modules::FolderPickerResult selected;
+    const core::Status status = host_->PickFolder(request, &selected);
+    if (status.Code() == core::ErrorCode::Cancelled) return core::Ok();
+    DHEPZ_RETURN_IF_ERROR(status);
+    state_patch->Set(L"working_folder",
+                     json::Value::String(selected.directory));
+    state_patch->Set(L"status", json::Value::String(L"Folder selected"));
     return core::Ok();
   }
 
-  core::Status Launch(const json::Value& payload, json::Value* state_patch) {
-    LaunchSpec spec;
-    DHEPZ_RETURN_IF_ERROR(ParseLaunchPayload(payload, &spec));
-    modules::ProcessRequest request;
-    DHEPZ_RETURN_IF_ERROR(BuildProcessRequest(spec, &request));
+  core::Status BeginLaunch(const json::Value& payload,
+                           json::Value* state_patch) {
+    if (operation_token_) {
+      return core::Err(core::ErrorCode::AlreadyExists,
+                       L"a terminal operation is already running");
+    }
+    DHEPZ_RETURN_IF_ERROR(ParseLaunchPayload(payload, &pending_));
+    const core::Status saved = SaveVenvPreference(*host_, pending_.venv_enabled);
+    if (!saved.ok()) host_->ReportStatus(saved);
 
-    *state_patch = json::Value::Object();
     state_patch->Set(L"busy", json::Value::Bool(true));
     state_patch->Set(L"launch_enabled", json::Value::Bool(false));
-    state_patch->Set(L"status", json::Value::String(L"Launching terminal..."));
-    modules::AsyncRequestToken token;
-    const std::uint64_t generation = generation_;
-    const core::Status started = host_->StartProcess(
-        request,
-        [this, generation, folder = spec.working_dir](
-            const modules::HostOperationCompletion& completion) {
-          if (host_ == nullptr || generation != generation_ ||
-              (completion.kind != modules::HostOperationKind::Launch &&
-               completion.kind != modules::HostOperationKind::ElevatedLaunch) ||
-              std::find(launch_tokens_.begin(), launch_tokens_.end(),
-                        completion.token) == launch_tokens_.end()) {
-            return;
-          }
-          std::erase(launch_tokens_, completion.token);
-          host_->ReportStatus(completion.status);
-          json::Value patch = json::Value::Object();
-          patch.Set(L"busy", json::Value::Bool(false));
-          patch.Set(L"launch_enabled", json::Value::Bool(true));
-          patch.Set(L"status", json::Value::String(
-              completion.status.ok() ? L"Terminal opened"
-                                     : completion.status.Message()));
-          if (completion.status.ok() && !folder.empty()) {
-            recents_.Add(folder);
-            const core::Status saved = recents_.Save(*host_);
-            if (!saved.ok()) host_->ReportStatus(saved);
-            patch.Set(L"recent_folders", StringArray(recents_.List()));
-          }
-          const core::Status published = host_->PublishStatePatch(patch);
-          if (!published.ok()) host_->ReportStatus(published);
-        },
-        &token);
+    state_patch->Set(L"status", json::Value::String(L"Checking folder..."));
+    const core::Status started = StartProbe(false);
     if (!started.ok()) {
+      host_->ReportStatus(started);
       state_patch->Set(L"busy", json::Value::Bool(false));
       state_patch->Set(L"launch_enabled", json::Value::Bool(true));
       state_patch->Set(L"status", json::Value::String(started.Message()));
-      return started;
     }
-    launch_tokens_.push_back(token);
-    return core::Ok();
+    return started;
+  }
+
+  core::Status StartProbe(bool after_create) {
+    const std::uint64_t generation = generation_;
+    modules::AsyncRequestToken token;
+    const core::Status started = host_->StartFolderProbe(
+        BuildVenvProbe(pending_),
+        [this, generation, after_create](
+            const modules::HostOperationCompletion& completion) {
+          if (!IsCurrent(generation, completion.token, operation_token_) ||
+              completion.kind != modules::HostOperationKind::FolderProbe) {
+            return;
+          }
+          operation_token_ = {};
+          if (!completion.status.ok()) {
+            Finish(completion.status);
+          } else if (!completion.folder.directory_exists) {
+            Finish(core::Err(core::ErrorCode::NotFound,
+                             L"folder does not exist or is inaccessible"));
+          } else if (!pending_.venv_enabled ||
+                     HasCompatibleVenv(pending_, completion.folder)) {
+            const core::Status status = StartTerminal();
+            if (!status.ok()) Finish(status);
+          } else if (after_create) {
+            Finish(core::Err(core::ErrorCode::NotFound,
+                             L"virtual environment was not created"));
+          } else {
+            const core::Status status = StartVenvCreation(false);
+            if (!status.ok()) Finish(status);
+          }
+        },
+        &token);
+    if (started.ok()) operation_token_ = token;
+    return started;
+  }
+
+  core::Status StartVenvCreation(bool python_fallback) {
+    json::Value patch = json::Value::Object();
+    patch.Set(L"status", json::Value::String(L"Creating virtual environment..."));
+    Publish(std::move(patch));
+
+    const std::uint64_t generation = generation_;
+    modules::AsyncRequestToken token;
+    const core::Status started = host_->StartProcess(
+        BuildVenvCreateRequest(pending_, python_fallback),
+        [this, generation, python_fallback](
+            const modules::HostOperationCompletion& completion) {
+          if (!IsCurrent(generation, completion.token, operation_token_) ||
+              completion.kind != modules::HostOperationKind::Capture) {
+            return;
+          }
+          operation_token_ = {};
+          const bool failed = !completion.status.ok() ||
+                              completion.process.exit_code != 0;
+          if (failed && pending_.target != Target::Wsl && !python_fallback) {
+            const core::Status fallback = StartVenvCreation(true);
+            if (!fallback.ok()) Finish(fallback);
+            return;
+          }
+          if (failed) {
+            const std::wstring message = completion.status.ok()
+                ? (completion.process.output.empty()
+                       ? L"virtual environment creation failed"
+                       : completion.process.output)
+                : completion.status.Message();
+            Finish(core::Err(core::ErrorCode::IoError, message));
+            return;
+          }
+          const core::Status probe = StartProbe(true);
+          if (!probe.ok()) Finish(probe);
+        },
+        &token);
+    if (started.ok()) operation_token_ = token;
+    return started;
+  }
+
+  core::Status StartTerminal() {
+    json::Value patch = json::Value::Object();
+    patch.Set(L"status", json::Value::String(L"Opening terminal..."));
+    Publish(std::move(patch));
+
+    modules::ProcessRequest request;
+    DHEPZ_RETURN_IF_ERROR(BuildProcessRequest(pending_, &request));
+    const std::uint64_t generation = generation_;
+    modules::AsyncRequestToken token;
+    const core::Status started = host_->StartProcess(
+        request,
+        [this, generation](const modules::HostOperationCompletion& completion) {
+          if (!IsCurrent(generation, completion.token, operation_token_) ||
+              (completion.kind != modules::HostOperationKind::Launch &&
+               completion.kind != modules::HostOperationKind::ElevatedLaunch)) {
+            return;
+          }
+          operation_token_ = {};
+          if (completion.status.ok()) {
+            recents_.Add(pending_.working_folder);
+            const core::Status saved = recents_.Save(*host_);
+            if (!saved.ok()) host_->ReportStatus(saved);
+          }
+          Finish(completion.status);
+        },
+        &token);
+    if (started.ok()) operation_token_ = token;
+    return started;
+  }
+
+  void Finish(const core::Status& status) {
+    operation_token_ = {};
+    host_->ReportStatus(status);
+    json::Value patch = json::Value::Object();
+    patch.Set(L"busy", json::Value::Bool(false));
+    patch.Set(L"launch_enabled", json::Value::Bool(true));
+    patch.Set(L"status", json::Value::String(
+        status.ok() ? L"Terminal opened" : status.Message()));
+    if (status.ok()) {
+      patch.Set(L"recent_folders", StringArray(recents_.List()));
+    }
+    Publish(std::move(patch));
   }
 
   modules::ModuleHost* host_ = nullptr;
   RecentFolders recents_;
-  std::uint64_t generation_ = 0;
-  std::uint64_t folder_selection_ = 0;
-  modules::AsyncRequestToken settings_token_;
-  modules::AsyncRequestToken folder_token_;
-  std::vector<modules::AsyncRequestToken> launch_tokens_;
   WslSession wsl_;
+  LaunchSpec pending_;
+  std::uint64_t generation_ = 0;
+  modules::AsyncRequestToken settings_token_;
+  modules::AsyncRequestToken operation_token_;
 };
-
-std::unique_ptr<modules::ModuleDescriptor> Make() {
-  return std::make_unique<TerminalModule>();
-}
-
-const modules::ModuleRegistrar registrar{L"terminal", &Make};
 
 }  // namespace
 
-std::unique_ptr<modules::ModuleDescriptor> MakeTerminalForTests() { return Make(); }
+std::unique_ptr<modules::ModuleDescriptor> MakeTerminalForTests() {
+  return std::make_unique<TerminalModule>();
+}
 
 }  // namespace terminal

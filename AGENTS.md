@@ -1,7 +1,8 @@
 # dhepz — agent operating rules
 
 Windows Win32 C++20 tray-resident launcher. MSBuild (`v143`, `/std:c++20 /W4 /WX`, static CRT, Unicode).
-The plan lives at `.docs/plan.md` (gitignored, single live copy). Read it before proposing architecture.
+The single tracked product plan is `docs/plan.md`. Read it before proposing or
+implementing architecture, UI, or feature behavior.
 
 ## Non-negotiable goals
 
@@ -39,19 +40,18 @@ These skills assume a web/JS project. Project translations, which win over the s
 - Modules compile directly into the EXE, never into a static `.lib` — the linker discards unreferenced objects and silently drops static self-registration.
 - LF line endings only. `app.rc` embeds JSON verbatim; CRLF corrupts it.
 - Every commit on `main` is CI-green. Releases are cut only from a commit CI already passed.
+- The working Open Terminal v1 reference is `C:\VSCODE\New folder\Open-terminal`.
+  Read it before changing terminal behavior. It is reference-only.
+- Never infer product behavior from tests, old issues, audits, or agent-written
+  acceptance criteria when they conflict with `docs/plan.md` or the user.
+- Do not add shells, controls, confirmations, settings, or workflows without
+  explicit user approval.
 
-## Where the work is tracked
+## Current working order
 
-Tasks live in **GitHub Issues**, not in a markdown checklist. One milestone per phase (Phase 0–7).
+`docs/plan.md` is authoritative through the Phase 4 correction. Do not start
+Phase 5, create replacement issue trees, or expand verification until its
+Phase 4 clean gate is reviewed by the user. Work from product behavior first;
+tests verify an approved design and never define it.
 
-- Issues #1–#14 — Phase 0, detailed. #15–#23 — Phase 1, detailed.
-- Issues #24–#29 — one outline per remaining phase, broken down at the preceding gate.
-- **Issue #30 is the working order. Read it before touching anything, and do the next unchecked item.**
-- `CHECKPOINT` issues are phase gates. **No phase starts until the previous gate is fully ticked.**
-- `.github/planning/` holds the scripts that generated those issues, and the issue-body template to reuse when a later phase is broken down. See its README.
-
-**One issue at a time, one PR each, in #30's order. Never work two in parallel.** Issue numbers are creation order and carry no meaning — #30's list is the order, and in one place it deliberately runs backwards through the numbers. Parallel work on items that merely look independent produces interleaved history nobody can bisect, and settles a shared interface against three simultaneous guesses instead of one refinement.
-
-`main` is protected: CI must be green and direct pushes are rejected, so every change lands as a PR.
-
-When implementing, work from the issue: its acceptance criteria and verification steps are the definition of done for that task. If reality contradicts an acceptance criterion, say so and amend the issue rather than quietly doing something else.
+`main` is protected: do not commit or push without explicit user authorization.
