@@ -119,6 +119,13 @@ class AppWindow final {
   // otherwise clicks become caption drags and hover never arrives.
   void set_content_hittest_handler(std::function<bool(float x_logical, float y_logical)> handler);
 
+  // Narrow lifecycle seams used by the production composition owner.
+  void set_visibility_handler(std::function<void(bool visible)> handler);
+  void set_frame_presented_handler(std::function<void()> handler);
+  void set_message_handler(
+      std::function<bool(unsigned int message, unsigned long long wparam,
+                         long long lparam)> handler);
+
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
                                         unsigned long long wparam, long long lparam);
@@ -151,6 +158,9 @@ class AppWindow final {
   std::function<bool(float, float)> content_move_handler_;
   std::function<bool(float, float)> content_down_handler_;
   std::function<bool(float, float)> content_hittest_handler_;
+  std::function<void(bool)> visibility_handler_;
+  std::function<void()> frame_presented_handler_;
+  std::function<bool(unsigned int, unsigned long long, long long)> message_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;

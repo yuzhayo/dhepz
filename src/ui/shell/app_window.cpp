@@ -149,6 +149,19 @@ void AppWindow::set_content_hittest_handler(std::function<bool(float, float)> ha
   content_hittest_handler_ = std::move(handler);
 }
 
+void AppWindow::set_visibility_handler(std::function<void(bool)> handler) {
+  visibility_handler_ = std::move(handler);
+}
+
+void AppWindow::set_frame_presented_handler(std::function<void()> handler) {
+  frame_presented_handler_ = std::move(handler);
+}
+
+void AppWindow::set_message_handler(
+    std::function<bool(unsigned int, unsigned long long, long long)> handler) {
+  message_handler_ = std::move(handler);
+}
+
 int AppWindow::ButtonCount() const {
   // Left-to-right: pin, [settings], close. Minimise/maximise arrive later
   // as a user toggle; the window is already resizable.
@@ -165,6 +178,7 @@ void AppWindow::Show() {
   GetClientRect(window, &client);
   OnResized(client.right, client.bottom);
   ShowWindow(window, SW_SHOW);
+  if (visibility_handler_) visibility_handler_(true);
 }
 
 void AppWindow::Hide() {
@@ -173,6 +187,7 @@ void AppWindow::Hide() {
   ShowWindow(window, SW_HIDE);
   // The buffer is the one large allocation and scales with window size.
   backend_.ReleaseSurface();
+  if (visibility_handler_) visibility_handler_(false);
 }
 
 void AppWindow::Close() {
@@ -319,6 +334,7 @@ void AppWindow::RenderFullFrame() {
   PaintContent();
   backend_.EndFrame();
   backend_.PresentLayered(hwnd_);
+  if (frame_presented_handler_) frame_presented_handler_();
 }
 
 void AppWindow::PaintContent() {
@@ -411,6 +427,7 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
     settle_timer_->OnTimer();
     return 0;
   }
+  if (message_handler_ && message_handler_(message, wparam, lparam)) return 0;
   switch (message) {
     case WM_THEMECHANGED:
     case WM_DWMCOLORIZATIONCOLORCHANGED:
@@ -442,6 +459,7 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       if (IsIconic(window)) {
         // Minimised is hidden for budget purposes: the buffer goes away too.
         backend_.ReleaseSurface();
+        if (visibility_handler_) visibility_handler_(false);
         return 0;
       }
       // The buffer exists only while visible: Show() renders it before
