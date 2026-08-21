@@ -18,32 +18,18 @@
 #include "modules/contract/module_contract.h"
 #include "modules/contract/module_manifest.h"
 #include "modules/gate/gate_host.h"
+#include "modules/gate/module_validator.h"
 #include "modules/gate/settings_store.h"
 #include "ui/config/resolved_ui_document.h"
 
 namespace modules {
-
-struct RejectEntry {
-  std::wstring module_id;
-  std::wstring reason;
-  std::wstring file;
-  int line = 0;
-  int column = 0;
-};
-
-struct CapabilityGrant {
-  std::wstring module_id;
-  std::wstring capability;
-  std::wstring file;
-  int line = 0;
-  int column = 0;
-};
 
 // Reject list of the most recent gate Start — the diagnostics module reads
 // this; there is exactly one gate (single choke point).
 const std::vector<RejectEntry>& CurrentRejects();
 
 class ConfigTransactionService;
+class GateStartupService;
 class SettingsAccessService;
 
 class AppGate final {
@@ -55,6 +41,9 @@ class AppGate final {
 
   // Runtime path: embedded RCDATA resource (+ optional override file).
   core::Status Start(std::wstring_view override_path = {});
+  // Named-resource seam used by the compiled-resource integration test.
+  core::Status StartFromResource(std::wstring_view resource_name,
+                                 std::wstring_view override_path = {});
   // Test path: explicit texts.
   core::Status StartWithEmbedded(std::wstring_view embedded_text,
                                  std::wstring_view override_text = {});
@@ -68,6 +57,8 @@ class AppGate final {
   core::Status ConfigureSettingsStorePath(std::wstring path);
 
   const ui::config::ResolvedUiDocument* document() const { return document_.get(); }
+  bool start_pending() const { return start_pending_; }
+  const core::Status& start_status() const { return start_status_; }
   std::uint64_t document_generation() const { return document_generation_; }
   std::vector<PeerInfo> Peers() const;
   const std::vector<RejectEntry>& Rejects() const { return rejects_; }
@@ -100,6 +91,7 @@ class AppGate final {
   std::uint64_t document_generation_ = 0;
   std::unique_ptr<SettingsAccessService> settings_service_;
   std::unique_ptr<ConfigTransactionService> config_service_;
+  std::unique_ptr<GateStartupService> startup_service_;
   std::vector<MountedModule> mounted_;
   std::vector<RejectEntry> rejects_;
   std::vector<CapabilityGrant> grants_;
@@ -108,6 +100,8 @@ class AppGate final {
   void* operation_window_ = nullptr;
   unsigned int operation_message_ = 0;
   HostStatePatchHandler state_patch_handler_;
+  bool start_pending_ = false;
+  core::Status start_status_;
 };
 
 }  // namespace modules

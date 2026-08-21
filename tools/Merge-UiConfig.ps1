@@ -34,13 +34,18 @@ if ($GenerateEmbedded) {
     # no filesystem walk at startup. PowerShell-only so a clean build can run
     # it before the exe exists; full schema validation runs at test time and
     # at the gate.
-    $components = New-Object System.Collections.ArrayList
+    $componentCount = 0
+    $sources = New-Object System.Collections.ArrayList
     $manifests = New-Object System.Collections.ArrayList
     $screensRoot = Join-Path $RepositoryRoot 'assets\ui\screens'
     if (Test-Path -LiteralPath $screensRoot -PathType Container) {
         foreach ($file in @(Get-ChildItem -LiteralPath $screensRoot -Filter *.json | Sort-Object Name)) {
-            $doc = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
-            foreach ($component in $doc.components) { $null = $components.Add($component) }
+            $text = Get-Content -LiteralPath $file.FullName -Raw
+            try { $doc = $text | ConvertFrom-Json -ErrorAction Stop }
+            catch { throw "$($file.FullName): malformed JSON: $($_.Exception.Message)" }
+            foreach ($component in @($doc.components)) { $componentCount++ }
+            $relative = [IO.Path]::GetRelativePath($RepositoryRoot, $file.FullName).Replace('\', '/')
+            $null = $sources.Add([ordered]@{ file = $relative; text = $text })
         }
     }
     $modulesRoot = Join-Path $RepositoryRoot 'src\modules'
@@ -58,19 +63,36 @@ if ($GenerateEmbedded) {
             if (-not $hasScreen) {
                 throw "Module '$($dir.Name)' has no screen.json."
             }
-            $doc = Get-Content -LiteralPath $screenPath -Raw | ConvertFrom-Json
-            foreach ($component in $doc.components) { $null = $components.Add($component) }
-            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-            $null = $manifests.Add($manifest)
+            $screenText = Get-Content -LiteralPath $screenPath -Raw
+            try { $screenDoc = $screenText | ConvertFrom-Json -ErrorAction Stop }
+            catch { throw "${screenPath}: malformed JSON: $($_.Exception.Message)" }
+            foreach ($component in @($screenDoc.components)) { $componentCount++ }
+            $screenRelative = [IO.Path]::GetRelativePath($RepositoryRoot, $screenPath).Replace('\', '/')
+            $null = $sources.Add([ordered]@{ file = $screenRelative; text = $screenText })
+
+            $manifestText = Get-Content -LiteralPath $manifestPath -Raw
+            try { $null = $manifestText | ConvertFrom-Json -ErrorAction Stop }
+            catch { throw "${manifestPath}: malformed JSON: $($_.Exception.Message)" }
+            $manifestRelative = [IO.Path]::GetRelativePath($RepositoryRoot, $manifestPath).Replace('\', '/')
+            $null = $manifests.Add([ordered]@{ file = $manifestRelative; text = $manifestText })
         }
     }
-    $core = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'assets\ui\core.json') -Raw | ConvertFrom-Json
-    $merged = [ordered]@{ core = $core; components = $components; modules = $manifests }
+    $corePath = Join-Path $RepositoryRoot 'assets\ui\core.json'
+    $coreText = Get-Content -LiteralPath $corePath -Raw
+    try { $core = $coreText | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw "${corePath}: malformed JSON: $($_.Exception.Message)" }
+    $merged = [ordered]@{
+        core = $core
+        coreText = $coreText
+        coreFile = 'assets/ui/core.json'
+        sources = $sources
+        modules = $manifests
+    }
     $outDir = Join-Path $RepositoryRoot 'build\generated'
     $null = New-Item -ItemType Directory -Force -Path $outDir
     $json = ($merged | ConvertTo-Json -Depth 32) + "`n"
     [System.IO.File]::WriteAllText((Join-Path $outDir 'embedded_ui.json'), $json, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "Embedded UI document written ($($components.Count) components)."
+    Write-Host "Embedded UI document written ($componentCount components)."
     exit 0
 }
 

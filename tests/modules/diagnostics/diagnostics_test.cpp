@@ -81,6 +81,13 @@ std::wstring ScreenFor(const wchar_t* id) {
          L"\", \"children\": [ { \"type\": \"text\", \"text\": \"x\" } ] }";
 }
 
+std::wstring DiagnosticsScreen() {
+  return L"{ \"type\": \"screen\", \"route_id\": \"diagnostics\", "
+         L"\"module_id\": \"diagnostics\", \"tab_label\": \"Diagnostics\", "
+         L"\"show_in_tabs\": false, \"children\": [ "
+         L"{ \"type\": \"text\", \"text\": \"x\" } ] }";
+}
+
 }  // namespace
 
 DHEPZ_TEST(Diagnostics, ThreeFoldersHealthyActiveBrokenReported) {
@@ -89,8 +96,9 @@ DHEPZ_TEST(Diagnostics, ThreeFoldersHealthyActiveBrokenReported) {
   modules::RegisterModule(L"typo", &MakeTypo);
   modules::RegisterModule(L"diagnostics", &modules::MakeDiagnosticsForTests);
 
-  const std::wstring screens = ScreenFor(L"alpha") + L", " + ScreenFor(L"typo") + L", " +
-                               ScreenFor(L"diagnostics");
+  const std::wstring screens = ScreenFor(L"alpha") + L", " +
+                               ScreenFor(L"typo") + L", " +
+                               DiagnosticsScreen();
   // alpha healthy; typo declares the correct action name in module.json but
   // the code registered the misspelling; malformed manifest does not parse.
   // "broken" fails schema validation (missing tabLabel) — the runtime form
@@ -101,7 +109,8 @@ DHEPZ_TEST(Diagnostics, ThreeFoldersHealthyActiveBrokenReported) {
       L"{ \"moduleId\": \"broken\" }";
   const std::wstring diagnostics_manifest =
       L"{ \"moduleId\": \"diagnostics\", \"tabLabel\": \"Diagnostics\", "
-        L"\"showInTabs\": false, \"actions\": [\"diagnostics:refresh\"] }";
+        L"\"order\": 900, \"showInTabs\": false, "
+        L"\"actions\": [\"diagnostics:refresh\"] }";
   const std::wstring embedded = L"{ \"core\": " + W(kCore) + L", \"components\": [ " +
                                 screens + L" ], \"modules\": [ " + manifests + L", " +
                                 diagnostics_manifest + L" ] }";
