@@ -11,12 +11,15 @@
 //      the gate (P3-03), never a backdoor.
 //
 // APPEND-ONLY RULE: once a module ships against this header, removing or
-// re-semanticising a member breaks every module. Additions only; a removal
-// is a major-version event documented in the ADR.
+// re-semanticising a member breaks every module. The synchronous predecessor's
+// removal is the one pre-shipping correction recorded by ADR 0001; additions
+// only after that contract freeze.
 //
 // This header is standard library + core/render only; no windows.h.
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,6 +49,58 @@ struct PeerInfo {
   std::wstring settings_route;  // empty when the peer ships no settings screen
 };
 
+enum class ProcessOperation { Launch, ElevatedLaunch, Capture };
+
+enum class HostOperationKind { Launch, ElevatedLaunch, Capture, FolderProbe };
+
+struct AsyncRequestToken {
+  std::uint64_t value = 0;
+
+  explicit operator bool() const { return value != 0; }
+  friend bool operator==(const AsyncRequestToken&, const AsyncRequestToken&) = default;
+};
+
+struct ProcessRequest {
+  ProcessOperation operation = ProcessOperation::Launch;
+  std::wstring executable;
+  std::vector<std::wstring> arguments;
+  std::wstring working_directory;
+  unsigned long timeout_ms = 10000;
+};
+
+struct ProcessOperationResult {
+  int exit_code = 0;
+  std::wstring output;
+  bool timed_out = false;
+};
+
+struct FolderProbeRequest {
+  std::wstring directory;
+  std::vector<std::wstring> relative_files;
+};
+
+struct RelativeFilePresence {
+  std::wstring relative_path;
+  bool present = false;
+};
+
+struct FolderProbeResult {
+  std::wstring normalized_directory;
+  bool directory_exists = false;
+  std::vector<RelativeFilePresence> files;
+};
+
+struct HostOperationCompletion {
+  AsyncRequestToken token;
+  std::uint64_t generation = 0;
+  HostOperationKind kind = HostOperationKind::Launch;
+  core::Status status;
+  ProcessOperationResult process;
+  FolderProbeResult folder;
+};
+
+using HostOperationCallback = std::function<void(const HostOperationCompletion& completion)>;
+
 // Parent hands down. Nothing else is reachable from a child.
 class ModuleHost {
  public:
@@ -60,8 +115,21 @@ class ModuleHost {
   // Bulk/blob data scoped to this moduleId only.
   virtual core::Status StorageWrite(std::wstring_view name, std::wstring_view data) = 0;
   virtual core::Status StorageRead(std::wstring_view name, std::wstring* out) = 0;
-  // Goes to a worker; never blocks the UI thread (implementation in P3-03+).
-  virtual core::Status ProcessRun(std::wstring_view command_line, std::wstring* captured) = 0;
+  // Starts immediately and returns a parent-issued token. The callback is
+  // delivered on the UI thread with this host lifetime's generation. Modules
+  // pass argv, never a prequoted command line; the parent owns quoting.
+  virtual core::Status StartProcess(const ProcessRequest& request,
+                                    HostOperationCallback callback,
+                                    AsyncRequestToken* token) = 0;
+  // Metadata-only directory inspection. relative_files are checked for
+  // presence; file contents are never exposed to a module.
+  virtual core::Status StartFolderProbe(const FolderProbeRequest& request,
+                                        HostOperationCallback callback,
+                                        AsyncRequestToken* token) = 0;
+  virtual void CancelRequest(AsyncRequestToken token) = 0;
+  // Called only from the UI-thread completion path. The parent owns routing
+  // the patch to the presenter; a module never reaches frontend types.
+  virtual core::Status PublishStatePatch(const json::Value& patch) = 0;
   // Report success/error; the parent decides how to show it.
   virtual void ReportStatus(const core::Status& status) = 0;
   virtual void Log(std::wstring_view level, std::wstring_view text) = 0;

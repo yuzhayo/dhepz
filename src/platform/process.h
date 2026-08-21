@@ -8,6 +8,7 @@
 // prove the round trip).
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <string_view>
 
@@ -34,9 +35,11 @@ core::Status ShellLaunch(std::wstring_view verb, std::wstring_view file,
 
 // Runs hidden, captures stdout+stderr (merged), bounded by timeout_ms.
 // Timeout is reported in the result (timed_out) with the child terminated;
-// spawn failures are a Status error. Never blocks past the deadline.
+// spawn failures are a Status error. An optional cancellation flag terminates
+// the child and returns Cancelled. Never blocks past the deadline.
 core::Status RunCapture(std::wstring_view command_line, std::wstring_view working_dir,
-                        unsigned long timeout_ms, RunResult* out);
+                        unsigned long timeout_ms, RunResult* out,
+                        const std::atomic<bool>* cancelled = nullptr);
 
 // FormatMessageW for humans.
 std::wstring ErrorMessage(unsigned long code);

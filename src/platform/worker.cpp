@@ -12,10 +12,16 @@
 namespace worker {
 namespace {
 
-// What crosses to the UI thread. The worker pointer lets Settle() re-check
-// the generation without any instance lookup at the window procedure.
+// What crosses to the UI thread. The guard outlives Worker when a posted
+// completion remains in the window queue during owner teardown.
+struct DeliveryGuard {
+  std::mutex mutex;
+  std::uint64_t next_generation = 1;
+  std::map<std::uint64_t, bool> generations;
+};
+
 struct CompletionMessage {
-  Worker* worker = nullptr;
+  std::shared_ptr<DeliveryGuard> guard;
   std::uint64_t generation = 0;
   std::shared_ptr<void> cargo;
   Deliver deliver;
@@ -35,6 +41,14 @@ struct CoalesceSlot {
   std::shared_ptr<std::atomic<bool>> cancel;
 };
 
+bool DeliveryGenerationAlive(const std::shared_ptr<DeliveryGuard>& guard,
+                             std::uint64_t generation) {
+  if (generation == 0) return true;
+  std::lock_guard lock(guard->mutex);
+  const auto found = guard->generations.find(generation);
+  return found != guard->generations.end() && found->second;
+}
+
 }  // namespace
 
 struct Worker::Impl {
@@ -44,8 +58,7 @@ struct Worker::Impl {
 
   mutable std::mutex mutex;
   std::vector<std::unique_ptr<ThreadEntry>> threads;
-  std::uint64_t next_generation = 1;
-  std::map<std::uint64_t, bool> generations;  // id -> alive
+  std::shared_ptr<DeliveryGuard> delivery_guard = std::make_shared<DeliveryGuard>();
   std::map<std::wstring, std::shared_ptr<CoalesceSlot>> slots;
 
   void ReapFinishedLocked() {
@@ -78,7 +91,8 @@ struct Worker::Impl {
     if (generation != 0 && !self->GenerationAlive(generation)) {
       return;
     }
-    auto* message = new CompletionMessage{self, generation, std::move(cargo), std::move(deliver)};
+    auto* message = new CompletionMessage{delivery_guard, generation, std::move(cargo),
+                                          std::move(deliver)};
     if (!PostMessageW(static_cast<HWND>(ui_window), completion_message, 0,
                       reinterpret_cast<LPARAM>(message))) {
       delete message;
@@ -239,27 +253,22 @@ void Worker::Cancel(const JobHandle& handle) {
 }
 
 std::uint64_t Worker::CreateGeneration() {
-  std::lock_guard<std::mutex> guard(impl_->mutex);
-  const std::uint64_t id = impl_->next_generation++;
-  impl_->generations[id] = true;
+  std::lock_guard<std::mutex> guard(impl_->delivery_guard->mutex);
+  const std::uint64_t id = impl_->delivery_guard->next_generation++;
+  impl_->delivery_guard->generations[id] = true;
   return id;
 }
 
 void Worker::InvalidateGeneration(std::uint64_t generation) {
-  std::lock_guard<std::mutex> guard(impl_->mutex);
-  const auto found = impl_->generations.find(generation);
-  if (found != impl_->generations.end()) {
+  std::lock_guard<std::mutex> guard(impl_->delivery_guard->mutex);
+  const auto found = impl_->delivery_guard->generations.find(generation);
+  if (found != impl_->delivery_guard->generations.end()) {
     found->second = false;
   }
 }
 
 bool Worker::GenerationAlive(std::uint64_t generation) const {
-  if (generation == 0) {
-    return true;
-  }
-  std::lock_guard<std::mutex> guard(impl_->mutex);
-  const auto found = impl_->generations.find(generation);
-  return found != impl_->generations.end() && found->second;
+  return DeliveryGenerationAlive(impl_->delivery_guard, generation);
 }
 
 void Worker::JoinFinished() {
@@ -280,9 +289,6 @@ void Worker::Shutdown() {
       return;
     }
     impl_->shutdown = true;
-    for (auto& generation : impl_->generations) {
-      generation.second = false;
-    }
     for (auto& slot : impl_->slots) {
       if (slot.second->cancel) {
         slot.second->cancel->store(true);
@@ -291,6 +297,12 @@ void Worker::Shutdown() {
     }
     to_join = std::move(impl_->threads);
     impl_->threads.clear();
+  }
+  {
+    std::lock_guard<std::mutex> guard(impl_->delivery_guard->mutex);
+    for (auto& generation : impl_->delivery_guard->generations) {
+      generation.second = false;
+    }
   }
   // Join outside the lock: a running body may still call back into the
   // worker (generation checks), and those take the same mutex.
@@ -306,7 +318,7 @@ void Worker::Settle(long long lparam) {
   if (message == nullptr) {
     return;
   }
-  if (message->worker->GenerationAlive(message->generation) && message->deliver) {
+  if (DeliveryGenerationAlive(message->guard, message->generation) && message->deliver) {
     message->deliver(std::move(message->cargo));
   }
   delete message;

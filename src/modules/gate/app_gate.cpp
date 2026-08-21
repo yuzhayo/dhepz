@@ -1,12 +1,10 @@
 #include "modules/gate/app_gate.h"
 
 #include <algorithm>
-#include <map>
-#include <mutex>
 
 #include "core/json.h"
+#include "modules/gate/gate_host.h"
 #include "modules/registry/module_registry.h"
-#include "platform/process.h"
 #include "ui/config/config_store.h"
 
 namespace modules {
@@ -23,84 +21,6 @@ const std::vector<RejectEntry>& CurrentRejects() {
   return g_rejects != nullptr ? *g_rejects : empty;
 }
 
-// Per-module host view. Settings reach is narrowed here by construction:
-// writes land only in the module's own section; global is read-only.
-class GateHost final : public ModuleHost {
- public:
-  GateHost(AppGate* gate, std::wstring module_id)
-      : gate_(gate), module_id_(std::move(module_id)) {}
-
-  ModuleSurface Surface() override { return surface_; }
-
-  core::Status SettingsRead(std::wstring_view key, std::wstring* out) override {
-    std::lock_guard lock(mutex_);
-    const auto& section = settings_[std::wstring(module_id_)];
-    const auto it = section.find(std::wstring(key));
-    if (it == section.end()) return core::Err(core::ErrorCode::NotFound, L"no such key");
-    *out = it->second;
-    return core::Ok();
-  }
-
-  core::Status SettingsReadGlobal(std::wstring_view key, std::wstring* out) override {
-    std::lock_guard lock(mutex_);
-    const auto it = global_.find(std::wstring(key));
-    if (it == global_.end()) return core::Err(core::ErrorCode::NotFound, L"no such key");
-    *out = it->second;
-    return core::Ok();
-  }
-
-  core::Status SettingsWrite(std::wstring_view key, std::wstring_view value) override {
-    std::lock_guard lock(mutex_);
-    settings_[std::wstring(module_id_)][std::wstring(key)] = std::wstring(value);
-    return core::Ok();
-  }
-
-  core::Status StorageWrite(std::wstring_view name, std::wstring_view data) override {
-    std::lock_guard lock(mutex_);
-    storage_[std::wstring(name)] = std::wstring(data);
-    return core::Ok();
-  }
-
-  core::Status StorageRead(std::wstring_view name, std::wstring* out) override {
-    std::lock_guard lock(mutex_);
-    const auto it = storage_.find(std::wstring(name));
-    if (it == storage_.end()) return core::Err(core::ErrorCode::NotFound, L"no such blob");
-    *out = it->second;
-    return core::Ok();
-  }
-
-  core::Status ProcessRun(std::wstring_view command_line, std::wstring* captured) override {
-    process::RunResult result;
-    const core::Status status = process::RunCapture(command_line, L"", 10000, &result);
-    if (!status.ok()) return status;
-    if (result.timed_out) {
-      return core::Err(core::ErrorCode::Cancelled, L"process timed out");
-    }
-    if (captured != nullptr) *captured = result.output;
-    return core::Ok();
-  }
-
-  void ReportStatus(const core::Status& status) override { last_status_ = status; }
-  void Log(std::wstring_view level, std::wstring_view text) override {
-    std::lock_guard lock(mutex_);
-    log_.push_back(std::wstring(level) + L": " + std::wstring(text));
-  }
-
-  core::Status RequestRoute(std::wstring_view route_id) override;
-  std::vector<PeerInfo> Peers() override;
-
- private:
-  AppGate* gate_;
-  std::wstring module_id_;
-  ModuleSurface surface_;
-  std::mutex mutex_;
-  std::map<std::wstring, std::map<std::wstring, std::wstring>> settings_;
-  std::map<std::wstring, std::wstring> global_;
-  std::map<std::wstring, std::wstring> storage_;
-  std::vector<std::wstring> log_;
-  core::Status last_status_;
-};
-
 AppGate::AppGate() = default;
 AppGate::~AppGate() = default;
 
@@ -114,6 +34,23 @@ core::Status AppGate::Start(std::wstring_view override_path) {
 core::Status AppGate::StartWithEmbedded(std::wstring_view embedded_text,
                                         std::wstring_view override_text) {
   return PairAndMount(embedded_text, override_text);
+}
+
+core::Status AppGate::ConfigureHostOperations(void* ui_window,
+                                              unsigned int completion_message,
+                                              HostStatePatchHandler state_patch_handler) {
+  if (!mounted_.empty()) {
+    return core::Err(core::ErrorCode::AlreadyExists,
+                     L"Host operations must be configured before gate start");
+  }
+  if (ui_window == nullptr || completion_message == 0) {
+    return core::Err(core::ErrorCode::InvalidArgument,
+                     L"Host operations require a UI window and completion message");
+  }
+  operation_window_ = ui_window;
+  operation_message_ = completion_message;
+  state_patch_handler_ = std::move(state_patch_handler);
+  return core::Ok();
 }
 
 core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
@@ -257,7 +194,11 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
         action_map_.emplace_back(action, module.manifest.module_id);
       }
       module.descriptor = std::move(descriptor);
-      module.host = std::make_unique<GateHost>(this, module.manifest.module_id);
+      module.host = std::make_unique<GateHost>(
+          module.manifest.module_id,
+          [this](std::wstring_view route_id) { return RequestRoute(route_id); },
+          [this]() { return Peers(); }, operation_window_, operation_message_,
+          state_patch_handler_);
       mounted_.push_back(std::move(module));
     }
   }
@@ -340,11 +281,5 @@ std::vector<PeerInfo> AppGate::Peers() const {
   }
   return peers;
 }
-
-core::Status GateHost::RequestRoute(std::wstring_view route_id) {
-  return gate_->RequestRoute(route_id);
-}
-
-std::vector<PeerInfo> GateHost::Peers() { return gate_->Peers(); }
 
 }  // namespace modules

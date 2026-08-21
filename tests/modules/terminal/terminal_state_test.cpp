@@ -31,9 +31,17 @@ class FakeHost final : public modules::ModuleHost {
   core::Status StorageRead(std::wstring_view, std::wstring*) override {
     return core::Err(core::ErrorCode::NotFound, L"no blob");
   }
-  core::Status ProcessRun(std::wstring_view, std::wstring*) override {
+  core::Status StartProcess(const modules::ProcessRequest&, modules::HostOperationCallback,
+                            modules::AsyncRequestToken*) override {
     return core::Err(core::ErrorCode::Unsupported, L"not here");
   }
+  core::Status StartFolderProbe(const modules::FolderProbeRequest&,
+                                modules::HostOperationCallback,
+                                modules::AsyncRequestToken*) override {
+    return core::Err(core::ErrorCode::Unsupported, L"not here");
+  }
+  void CancelRequest(modules::AsyncRequestToken) override {}
+  core::Status PublishStatePatch(const json::Value&) override { return core::Ok(); }
   void ReportStatus(const core::Status&) override {}
   void Log(std::wstring_view, std::wstring_view) override {}
   core::Status RequestRoute(std::wstring_view) override { return core::Ok(); }

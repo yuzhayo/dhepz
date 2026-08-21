@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "framework/test_case.h"
 
@@ -43,7 +44,27 @@ struct TestHost final : modules::ModuleHost {
   }
   core::Status StorageWrite(std::wstring_view, std::wstring_view) override { return core::Ok(); }
   core::Status StorageRead(std::wstring_view, std::wstring*) override { return core::Ok(); }
-  core::Status ProcessRun(std::wstring_view, std::wstring*) override { return core::Ok(); }
+  core::Status StartProcess(const modules::ProcessRequest& request,
+                            modules::HostOperationCallback callback,
+                            modules::AsyncRequestToken* token) override {
+    process_request = request;
+    process_callback = std::move(callback);
+    *token = {17};
+    return core::Ok();
+  }
+  core::Status StartFolderProbe(const modules::FolderProbeRequest& request,
+                                modules::HostOperationCallback callback,
+                                modules::AsyncRequestToken* token) override {
+    folder_request = request;
+    folder_callback = std::move(callback);
+    *token = {18};
+    return core::Ok();
+  }
+  void CancelRequest(modules::AsyncRequestToken token) override { cancelled = token; }
+  core::Status PublishStatePatch(const json::Value& patch) override {
+    published_patch = patch;
+    return core::Ok();
+  }
   void ReportStatus(const core::Status& s) override { reported = !s.ok(); }
   void Log(std::wstring_view, std::wstring_view) override {}
   core::Status RequestRoute(std::wstring_view route) override {
@@ -54,6 +75,12 @@ struct TestHost final : modules::ModuleHost {
 
   std::wstring last_write;
   std::wstring requested;
+  modules::ProcessRequest process_request;
+  modules::FolderProbeRequest folder_request;
+  modules::HostOperationCallback process_callback;
+  modules::HostOperationCallback folder_callback;
+  modules::AsyncRequestToken cancelled;
+  json::Value published_patch;
   bool reported = false;
 };
 
@@ -98,6 +125,40 @@ DHEPZ_TEST(ModuleManifest, ValidManifestParses) {
   DHEPZ_CHECK(manifest.show_in_tabs);
   DHEPZ_CHECK_EQ(manifest.settings_route, std::wstring(L"terminal-settings"));
   DHEPZ_CHECK_EQ(manifest.actions.size(), static_cast<std::size_t>(2));
+}
+
+DHEPZ_TEST(ModuleContract, AsyncOperationsAreTypedAndTokened) {
+  TestHost host;
+  modules::ProcessRequest process;
+  process.operation = modules::ProcessOperation::Capture;
+  process.executable = L"tool.exe";
+  process.arguments = {L"space value", L"&literal"};
+  process.working_directory = L"C:\\work";
+  process.timeout_ms = 2500;
+
+  modules::AsyncRequestToken process_token;
+  DHEPZ_CHECK(host.StartProcess(process, {}, &process_token).ok());
+  DHEPZ_CHECK_EQ(process_token.value, static_cast<std::uint64_t>(17));
+  DHEPZ_CHECK(host.process_request.operation == modules::ProcessOperation::Capture);
+  DHEPZ_CHECK_EQ(host.process_request.arguments[0], std::wstring(L"space value"));
+
+  modules::FolderProbeRequest probe;
+  probe.directory = L"C:\\work";
+  probe.relative_files = {L"Scripts\\Activate.ps1", L"Scripts\\activate.bat"};
+  modules::AsyncRequestToken probe_token;
+  DHEPZ_CHECK(host.StartFolderProbe(probe, {}, &probe_token).ok());
+  DHEPZ_CHECK_EQ(probe_token.value, static_cast<std::uint64_t>(18));
+  DHEPZ_CHECK_EQ(host.folder_request.relative_files.size(), static_cast<std::size_t>(2));
+
+  host.CancelRequest(process_token);
+  DHEPZ_CHECK(host.cancelled == process_token);
+
+  json::Value patch = json::Value::Object();
+  patch.Set(L"busy", json::Value::Bool(false));
+  DHEPZ_CHECK(host.PublishStatePatch(patch).ok());
+  const json::Value* busy = host.published_patch.Find(L"busy");
+  DHEPZ_CHECK(busy != nullptr);
+  DHEPZ_CHECK(!busy->AsBool(true));
 }
 
 DHEPZ_TEST(ModuleManifest, MissingRequiredFieldsAreDiagnostics) {
