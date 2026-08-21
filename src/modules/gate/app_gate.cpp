@@ -56,7 +56,7 @@ core::Status AppGate::ConfigureHostOperations(void* ui_window,
   operation_window_ = ui_window;
   operation_message_ = completion_message;
   state_patch_handler_ = std::move(state_patch_handler);
-  return core::Ok();
+  return settings_service_->ConfigureHost(ui_window, completion_message);
 }
 
 core::Status AppGate::ConfigureConfigOverridePath(std::wstring path) {
@@ -65,6 +65,19 @@ core::Status AppGate::ConfigureConfigOverridePath(std::wstring path) {
                      L"Config path must be configured before gate start");
   }
   return config_service_->ConfigureOverridePath(std::move(path));
+}
+
+core::Status AppGate::ConfigureSettingsStorePath(std::wstring path) {
+  if (!mounted_.empty()) {
+    return core::Err(core::ErrorCode::AlreadyExists,
+                     L"Settings path must be configured before gate start");
+  }
+  return settings_service_->ConfigureStorePath(std::move(path));
+}
+
+const std::vector<SettingsStoreDiagnostic>&
+AppGate::SettingsDiagnostics() const {
+  return settings_service_->Diagnostics();
 }
 
 core::Status AppGate::PairAndMount(std::wstring_view embedded_text,

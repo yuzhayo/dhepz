@@ -27,9 +27,14 @@ class FakeHost final : public modules::ModuleHost {
     settings[std::wstring(key)] = std::wstring(value);
     return core::Ok();
   }
-  core::Status StorageWrite(std::wstring_view, std::wstring_view) override { return core::Ok(); }
-  core::Status StorageRead(std::wstring_view, std::wstring*) override {
-    return core::Err(core::ErrorCode::NotFound, L"no blob");
+  core::Status StartSettingsLoad(modules::HostOperationCallback callback,
+                                 modules::AsyncRequestToken* token) override {
+    token->value = 1;
+    modules::HostOperationCompletion completion;
+    completion.token = *token;
+    completion.kind = modules::HostOperationKind::SettingsLoad;
+    callback(completion);
+    return core::Ok();
   }
   core::Status StartProcess(const modules::ProcessRequest&, modules::HostOperationCallback,
                             modules::AsyncRequestToken*) override {
