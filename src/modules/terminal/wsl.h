@@ -1,44 +1,32 @@
-// WSL distro enumeration (P4-03): `wsl -l -q` through an injected runner
-// (process::RunCapture by default, a mock in tests), cached per session,
-// refreshable explicitly. Adding a distro on the machine shows up after
-// Refresh — no rebuild, no code change.
+// Pure parser for decoded `wsl.exe -l -q` output. Process execution and cache
+// ownership live in TerminalModule through the parent host contract.
 #pragma once
 
-#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "core/status.h"
-#include "platform/process.h"
+#include "modules/contract/module_contract.h"
 
 namespace terminal {
 
-class WslEnumerator final {
+std::vector<std::wstring> ParseWslListOutput(std::wstring_view output);
+
+// Session-owned terminal feature state. External work is available only via
+// ModuleHost; the helper neither names nor includes a platform service.
+class WslSession final {
  public:
-  using Runner =
-      std::function<core::Status(std::wstring_view command_line, process::RunResult* out)>;
-
-  // Default runner: process::RunCapture with a 10 s deadline. Callers run
-  // this off the UI thread (worker offload, P4-05).
-  WslEnumerator();
-  explicit WslEnumerator(Runner runner);
-
-  // Runs `wsl -l -q`, parses, replaces the cache. A failed run keeps the
-  // previous cache and returns the Status.
-  core::Status Refresh();
-
-  // Session cache; empty until the first successful Refresh.
-  const std::vector<std::wstring>& Distros() const { return distros_; }
-  bool cached() const { return cached_; }
-
-  // Pure parse, exposed for tests: keeps headerless -q output intact, tolerates
-  // decoded UTF-16 BOM/NULs, and skips only positively recognized old headers.
-  static std::vector<std::wstring> ParseListOutput(const std::wstring& output);
+  void WriteDefaults(json::Value* patch) const;
+  core::Status Bind(modules::ModuleHost& host);
+  core::Status Refresh(json::Value* immediate_patch);
+  void Release();
 
  private:
-  Runner runner_;
+  modules::ModuleHost* host_ = nullptr;
+  modules::AsyncRequestToken token_;
   std::vector<std::wstring> distros_;
+  std::uint64_t generation_ = 0;
+  std::uint64_t refresh_ = 0;
   bool cached_ = false;
 };
 

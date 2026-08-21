@@ -4,6 +4,7 @@
 #include "modules/registry/module_registry.h"
 #include "modules/terminal/terminal_logic.h"
 #include "modules/terminal/terminal_state.h"
+#include "modules/terminal/wsl.h"
 
 #include <algorithm>
 #include <memory>
@@ -49,7 +50,8 @@ class TerminalModule final : public modules::ModuleDescriptor {
   bool ShowInTabs() const override { return true; }
   std::wstring_view SettingsRoute() const override { return {}; }
   std::vector<std::wstring> DeclaredActions() const override {
-    return {L"terminal:launch", L"terminal:select-folder"};
+    return {L"terminal:launch", L"terminal:select-folder",
+            L"terminal:refresh-wsl"};
   }
   std::vector<std::wstring> DeclaredBindings() const override {
     return {L"working_folder", L"recent_folders", L"wsl_distros", L"wsl_distro",
@@ -68,7 +70,11 @@ class TerminalModule final : public modules::ModuleDescriptor {
     modules::AsyncRequestToken token;
     const core::Status started = host_->StartSettingsLoad(
         [this, generation](const modules::HostOperationCompletion& completion) {
-          if (host_ == nullptr || generation != generation_) return;
+          if (host_ == nullptr || generation != generation_ ||
+              completion.token != settings_token_ ||
+              completion.kind != modules::HostOperationKind::SettingsLoad) {
+            return;
+          }
           settings_token_ = {};
           if (!completion.status.ok()) {
             host_->ReportStatus(completion.status);
@@ -86,6 +92,8 @@ class TerminalModule final : public modules::ModuleDescriptor {
     } else if (started.Code() != core::ErrorCode::Unsupported) {
       host_->ReportStatus(started);
     }
+    const core::Status wsl_started = wsl_.Bind(host);
+    if (!wsl_started.ok()) host_->ReportStatus(wsl_started);
     return core::Ok();
   }
 
@@ -97,6 +105,9 @@ class TerminalModule final : public modules::ModuleDescriptor {
     }
     if (action == L"terminal:select-folder") {
       return SelectFolder(payload, state_patch);
+    }
+    if (action == L"terminal:refresh-wsl") {
+      return wsl_.Refresh(state_patch);
     }
     if (action != L"terminal:launch") {
       return core::Err(core::ErrorCode::NotFound, L"terminal: unknown action");
@@ -116,6 +127,7 @@ class TerminalModule final : public modules::ModuleDescriptor {
     settings_token_ = {};
     folder_token_ = {};
     launch_tokens_.clear();
+    wsl_.Release();
     host_ = nullptr;
   }
 
@@ -124,8 +136,7 @@ class TerminalModule final : public modules::ModuleDescriptor {
     json::Value patch = json::Value::Object();
     patch.Set(L"working_folder", json::Value::String(L""));
     patch.Set(L"recent_folders", json::Value::Array());
-    patch.Set(L"wsl_distros", json::Value::Array());
-    patch.Set(L"wsl_distro", json::Value::Null());
+    wsl_.WriteDefaults(&patch);
     patch.Set(L"admin", json::Value::Bool(false));
     patch.Set(L"powershell_venv", json::Value::Null());
     patch.Set(L"cmd_venv", json::Value::Null());
@@ -153,6 +164,7 @@ class TerminalModule final : public modules::ModuleDescriptor {
     }
     const std::uint64_t selection = ++folder_selection_;
     const std::uint64_t generation = generation_;
+    if (folder_token_) host_->CancelRequest(folder_token_);
     modules::FolderProbeRequest request;
     request.directory = folder->AsString();
     request.relative_files = {std::wstring(kPowerShellVenv), std::wstring(kCmdVenv)};
@@ -167,7 +179,9 @@ class TerminalModule final : public modules::ModuleDescriptor {
         [this, generation, selection](
             const modules::HostOperationCompletion& completion) {
           if (host_ == nullptr || generation != generation_ ||
-              selection != folder_selection_) {
+              selection != folder_selection_ ||
+              completion.token != folder_token_ ||
+              completion.kind != modules::HostOperationKind::FolderProbe) {
             return;
           }
           folder_token_ = {};
@@ -237,7 +251,13 @@ class TerminalModule final : public modules::ModuleDescriptor {
         request,
         [this, generation, folder = spec.working_dir](
             const modules::HostOperationCompletion& completion) {
-          if (host_ == nullptr || generation != generation_) return;
+          if (host_ == nullptr || generation != generation_ ||
+              (completion.kind != modules::HostOperationKind::Launch &&
+               completion.kind != modules::HostOperationKind::ElevatedLaunch) ||
+              std::find(launch_tokens_.begin(), launch_tokens_.end(),
+                        completion.token) == launch_tokens_.end()) {
+            return;
+          }
           std::erase(launch_tokens_, completion.token);
           host_->ReportStatus(completion.status);
           json::Value patch = json::Value::Object();
@@ -273,6 +293,7 @@ class TerminalModule final : public modules::ModuleDescriptor {
   modules::AsyncRequestToken settings_token_;
   modules::AsyncRequestToken folder_token_;
   std::vector<modules::AsyncRequestToken> launch_tokens_;
+  WslSession wsl_;
 };
 
 std::unique_ptr<modules::ModuleDescriptor> Make() {
