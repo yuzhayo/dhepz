@@ -121,6 +121,7 @@ core::Status ProductionApplication::ComposeWindow() {
 
   presenter_ = std::make_unique<ui::presenter::ScreenPresenter>(window_->backend());
   presenter_->SetDocument(gate_->document());
+  presenter_document_generation_ = gate_->document_generation();
   presenter_->set_action_dispatch_handler(
       [this](std::wstring_view route, std::wstring_view action,
              const json::Value& payload, json::Value* state_patch) {
