@@ -50,10 +50,14 @@ std::wstring RepoRoot() {
 
 struct Healthy {
   static std::wstring_view Id() { return L"fixture-healthy"; }
+  static std::wstring_view Label() { return L"Fixture Healthy"; }
+  static int Order() { return 500; }
   static std::vector<std::wstring> Actions() { return {L"fixture-launch"}; }
 };
 struct Typo {
   static std::wstring_view Id() { return L"fixture-typo"; }
+  static std::wstring_view Label() { return L"Fixture Typo"; }
+  static int Order() { return 501; }
   // The misspelling: module.json declares fixture-launch, the handler
   // registers under this name, so the gate must reject the module.
   static std::vector<std::wstring> Actions() { return {L"fixture-launhc"}; }
@@ -63,8 +67,8 @@ template <typename Base>
 class FixtureModule final : public modules::ModuleDescriptor {
  public:
   std::wstring_view ModuleId() const override { return Base::Id(); }
-  std::wstring_view TabLabel() const override { return Base::Id(); }
-  int Order() const override { return 500; }
+  std::wstring_view TabLabel() const override { return Base::Label(); }
+  int Order() const override { return Base::Order(); }
   bool ShowInTabs() const override { return false; }
   std::wstring_view SettingsRoute() const override { return {}; }
   std::vector<std::wstring> DeclaredActions() const override { return Base::Actions(); }

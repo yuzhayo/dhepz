@@ -141,8 +141,13 @@ std::wstring Manifest(std::wstring_view id, std::wstring_view label,
   const std::wstring caps = capability.empty()
                                 ? L"[]"
                                 : L"[ \"" + std::wstring(capability) + L"\" ]";
+  const int order = id == L"settings"   ? 10
+                    : id == L"ui-editor" ? 20
+                    : id == L"alpha"     ? 30
+                                           : 40;
   return L"{ \"moduleId\": \"" + std::wstring(id) + L"\", \"tabLabel\": \"" +
-         std::wstring(label) + L"\", \"capabilities\": " + caps + L" }";
+         std::wstring(label) + L"\", \"order\": " + std::to_wstring(order) +
+         L", \"capabilities\": " + caps + L" }";
 }
 
 std::wstring Embedded(const std::vector<std::wstring>& screens,

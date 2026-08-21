@@ -10,6 +10,7 @@
 
 #include "app_version.h"
 #include "core/json.h"
+#include "modules/gate/app_gate.h"
 #include "platform/files.h"
 #include "platform/performance_trace.h"
 #include "platform/tray_process.h"
@@ -86,6 +87,32 @@ int RunValidateUi(const std::wstring& core_path, const std::wstring& screens_dir
   return 0;
 }
 
+int RunValidateEmbedded() {
+  modules::AppGate gate;
+  const core::Status started = gate.Start();
+  if (!started.ok()) {
+    std::wprintf(L"embedded UI startup failed: %ls\n", started.Message().c_str());
+    return 1;
+  }
+  for (const modules::RejectEntry& reject : gate.Rejects()) {
+    std::wprintf(L"%ls(%d,%d): module %ls: %ls\n", reject.file.c_str(),
+                 reject.line, reject.column, reject.module_id.c_str(),
+                 reject.reason.c_str());
+  }
+  if (!gate.Rejects().empty()) {
+    std::wprintf(L"embedded module contract invalid: %zu rejection(s)\n",
+                 gate.Rejects().size());
+    return 1;
+  }
+  if (!gate.Mounted(L"terminal") || !gate.Mounted(L"diagnostics")) {
+    std::wprintf(L"embedded UI omitted terminal or diagnostics\n");
+    return 1;
+  }
+  std::wprintf(L"embedded UI ok: %zu module(s), %zu route(s)\n",
+               gate.Peers().size(), gate.document()->routes().size());
+  return 0;
+}
+
 }  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance,
@@ -102,6 +129,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   // Tooling path (#57): validate the UI config and exit, no tray, no window.
   int argc = 0;
   LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  for (int i = 0; i < argc && argv != nullptr; ++i) {
+    if (lstrcmpW(argv[i], L"--validate-embedded") == 0) {
+      const int code = RunValidateEmbedded();
+      LocalFree(argv);
+      return code;
+    }
+  }
   for (int i = 0; i + 2 < argc + 1 && argv != nullptr; ++i) {
     if (lstrcmpW(argv[i], L"--validate-ui") == 0 && i + 2 <= argc - 1) {
       const int code = RunValidateUi(argv[i + 1], argv[i + 2]);
