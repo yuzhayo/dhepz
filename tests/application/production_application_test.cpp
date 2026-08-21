@@ -31,7 +31,11 @@ class FakeTerminalModule final : public modules::ModuleDescriptor {
             L"launch_enabled"};
   }
   std::vector<std::wstring> DeclaredCapabilities() const override { return {}; }
-  core::Status Bind(modules::ModuleHost&) override { return core::Ok(); }
+  core::Status Bind(modules::ModuleHost& host) override {
+    json::Value patch = json::Value::Object();
+    patch.Set(L"launch_enabled", json::Value::Bool(true));
+    return host.PublishStatePatch(patch);
+  }
   core::Status Handle(std::wstring_view action, const json::Value&,
                       json::Value*) override {
     if (action != L"terminal:launch") {
