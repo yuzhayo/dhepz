@@ -15,14 +15,6 @@
 
 namespace {
 
-std::wstring W(const char* utf8) {
-  std::wstring wide;
-  for (const char* p = utf8; *p != '\0'; ++p) {
-    wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(*p)));
-  }
-  return wide;
-}
-
 std::wstring Ws(const std::string& narrow) {
   std::wstring wide;
   for (const char c : narrow) wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
@@ -62,6 +54,13 @@ struct Typo {
   // registers under this name, so the gate must reject the module.
   static std::vector<std::wstring> Actions() { return {L"fixture-launhc"}; }
 };
+struct Metadata {
+  static std::wstring_view Id() { return L"fixture-metadata"; }
+  // Deliberately disagrees with the valid embedded manifest.
+  static std::wstring_view Label() { return L"Wrong Metadata"; }
+  static int Order() { return 502; }
+  static std::vector<std::wstring> Actions() { return {}; }
+};
 
 template <typename Base>
 class FixtureModule final : public modules::ModuleDescriptor {
@@ -87,66 +86,53 @@ std::unique_ptr<modules::ModuleDescriptor> MakeHealthy() {
 std::unique_ptr<modules::ModuleDescriptor> MakeTypo() {
   return std::make_unique<FixtureModule<Typo>>();
 }
+std::unique_ptr<modules::ModuleDescriptor> MakeMetadata() {
+  return std::make_unique<FixtureModule<Metadata>>();
+}
 
 }  // namespace
 
-// The three fixture folders (healthy / typo'd action / malformed manifest)
-// drive the gate the way CI does: healthy mounts, broken ones are reported,
-// the app still starts, and the reject list is exported for the CI artifact.
+// Runtime composition consumes compiled RCDATA containing one healthy and two
+// syntactically valid contract-broken modules. Byte-level malformed JSON is a
+// separate build-stage failure and is checked below plus in CI.
 DHEPZ_TEST(ContractFixtures, DegradedModeAcrossThreeFolders) {
   const std::wstring root = RepoRoot();
   const std::wstring fixtures = root + L"\\tests\\fixtures\\modules";
-
-  json::Value core;
-  DHEPZ_CHECK(json::Parse(W(ReadFile(root + L"\\assets\\ui\\core.json").c_str()), &core).ok());
-
-  std::wstring screens;
-  std::wstring manifests;
-  int broken_manifests = 0;
-  const wchar_t* names[3] = {L"fixture-broken", L"fixture-healthy", L"fixture-typo"};
-  for (const wchar_t* name : names) {
-    const std::string manifest_text =
-        ReadFile(fixtures + L"\\" + name + L"\\module.json");
-    json::Value manifest_value;
-    if (!json::Parse(Ws(manifest_text), &manifest_value).ok()) {
-      ++broken_manifests;  // byte-level malformed: fails the build merge, not embedded
-      continue;
-    }
-    if (!manifests.empty()) manifests += L", ";
-    manifests += Ws(manifest_text);
-    const std::string screen_text =
-        ReadFile(fixtures + L"\\" + name + L"\\screen.json");
-    json::Value screen_doc;
-    if (json::Parse(Ws(screen_text), &screen_doc).ok()) {
-      const json::Value* components = screen_doc.Find(L"components");
-      if (components != nullptr) {
-        for (const json::Value& component : components->items()) {
-          if (!screens.empty()) screens += L", ";
-          screens += json::Serialize(component);
-        }
-      }
-    }
-  }
-  DHEPZ_CHECK_EQ(broken_manifests, 1);
+  json::Value malformed;
+  DHEPZ_CHECK_FALSE(json::Parse(
+      Ws(ReadFile(fixtures + L"\\fixture-broken\\module.json")),
+      &malformed).ok());
 
   modules::ResetRegistryForTests();
   modules::RegisterModule(L"fixture-healthy", &MakeHealthy);
   modules::RegisterModule(L"fixture-typo", &MakeTypo);
+  modules::RegisterModule(L"fixture-metadata", &MakeMetadata);
 
-  const std::wstring embedded = L"{ \"core\": " + json::Serialize(core) +
-                                L", \"components\": [ " + screens + L" ], \"modules\": [ " +
-                                manifests + L" ] }";
   modules::AppGate gate;
-  DHEPZ_CHECK(gate.StartWithEmbedded(embedded).ok());
+  DHEPZ_CHECK(gate.StartFromResource(L"APP_GATE_CHECKPOINT_UI").ok());
 
   DHEPZ_CHECK(gate.Mounted(L"fixture-healthy"));
   DHEPZ_CHECK(!gate.Mounted(L"fixture-typo"));
+  DHEPZ_CHECK(!gate.Mounted(L"fixture-metadata"));
+  json::Value patch = json::Value::Object();
+  DHEPZ_CHECK(gate.Dispatch(L"fixture-launch", json::Value::Object(), &patch).ok());
 
   bool saw_typo = false;
+  bool saw_metadata = false;
   for (const modules::RejectEntry& reject : gate.Rejects()) {
-    if (reject.module_id == L"fixture-typo") saw_typo = true;
+    if (reject.module_id == L"fixture-typo") {
+      saw_typo = true;
+      DHEPZ_CHECK_EQ(reject.file, std::wstring(L"fixtures/typo/module.json"));
+      DHEPZ_CHECK(reject.line > 0 && reject.column > 0);
+    }
+    if (reject.module_id == L"fixture-metadata") {
+      saw_metadata = true;
+      DHEPZ_CHECK_EQ(reject.file, std::wstring(L"fixtures/metadata/module.json"));
+      DHEPZ_CHECK(reject.line > 0 && reject.column > 0);
+    }
   }
   DHEPZ_CHECK(saw_typo);
+  DHEPZ_CHECK(saw_metadata);
 
   // CI-readable diagnostics artifact.
   FILE* out = nullptr;
