@@ -14,43 +14,6 @@
 #include "ui/shell/app_window.h"
 
 namespace {
-class FakeTerminalModule final : public modules::ModuleDescriptor {
- public:
-  std::wstring_view ModuleId() const override { return L"terminal"; }
-  std::wstring_view TabLabel() const override { return L"Terminal"; }
-  int Order() const override { return 10; }
-  bool ShowInTabs() const override { return false; }
-  std::wstring_view SettingsRoute() const override { return {}; }
-  std::vector<std::wstring> DeclaredActions() const override {
-    return {L"terminal:launch", L"terminal:browse-folder",
-            L"terminal:refresh-wsl"};
-  }
-  std::vector<std::wstring> DeclaredBindings() const override {
-    return {L"working_folder", L"recent_folders", L"wsl_distros",
-            L"wsl_distro", L"venv_enabled", L"busy", L"status",
-            L"launch_enabled"};
-  }
-  std::vector<std::wstring> DeclaredCapabilities() const override { return {}; }
-  core::Status Bind(modules::ModuleHost& host) override {
-    json::Value patch = json::Value::Object();
-    patch.Set(L"launch_enabled", json::Value::Bool(true));
-    return host.PublishStatePatch(patch);
-  }
-  core::Status Handle(std::wstring_view action, const json::Value&,
-                      json::Value*) override {
-    if (action != L"terminal:launch") {
-      return core::Err(core::ErrorCode::NotFound, L"unexpected action");
-    }
-    return core::Err(core::ErrorCode::InvalidArgument,
-                     L"fake terminal dispatch observed");
-  }
-  void Release() override {}
-};
-
-std::unique_ptr<modules::ModuleDescriptor> MakeFakeTerminal() {
-  return std::make_unique<FakeTerminalModule>();
-}
-
 class ScopedTerminalRegistration final {
  public:
   explicit ScopedTerminalRegistration(modules::ModuleFactory factory) {
@@ -134,21 +97,37 @@ DHEPZ_TEST(ProductionApplication, CloseReleasesAndNextShowRebuildsCompleteFrame)
 }
 
 DHEPZ_TEST(ProductionApplication, TerminalJsonActionReachesGateStatusPath) {
-  ScopedTerminalRegistration registration(&MakeFakeTerminal);
+  ScopedTerminalRegistration registration(&terminal::MakeTerminalForTests);
   application::ProductionApplication app;
   const core::Status start = app.Start(GetModuleHandleW(nullptr), false);
   DHEPZ_CHECK_EQ(start.Message(), std::wstring());
+  DHEPZ_CHECK(app.gate()->Mounted(L"terminal"));
+  DHEPZ_CHECK(app.gate()->document()->FindRoute(L"terminal") != nullptr);
+  DHEPZ_CHECK_EQ(app.presenter()->current_route(), std::wstring(L"terminal"));
+  const json::Value* launch_enabled =
+      app.presenter()->ViewStateValue(L"terminal", L"launch_enabled");
+  DHEPZ_CHECK(launch_enabled != nullptr);
+  DHEPZ_CHECK(launch_enabled->AsBool());
 
   app.presenter()->SwitchRoute(L"terminal");
   app.window()->Repaint();
+  json::Value invalid_state = json::Value::Object();
+  invalid_state.Set(L"working_folder", json::Value::String(L""));
+  invalid_state.Set(L"launch_enabled", json::Value::Bool(true));
+  DHEPZ_CHECK(
+      app.presenter()->ApplyStatePatch(L"terminal", invalid_state).ok());
   render::Rect button{};
   DHEPZ_CHECK(app.presenter()->InteractiveBounds(L"launch-powershell", &button));
+  DHEPZ_CHECK(button.width > 0.0f);
+  DHEPZ_CHECK(button.height > 0.0f);
+  DHEPZ_CHECK(app.presenter()->HitTestContent(
+      button.x + button.width / 2.0f, button.y + button.height / 2.0f));
   DHEPZ_CHECK(app.presenter()->HandleClick(
       button.x + button.width / 2.0f,
       button.y + button.height / 2.0f));
   DHEPZ_CHECK_FALSE(app.presenter()->last_action_status().ok());
   DHEPZ_CHECK_CONTAINS(app.presenter()->last_action_status().Message(),
-                       std::wstring(L"dispatch observed"));
+                       std::wstring(L"working_folder"));
   DHEPZ_CHECK_EQ(app.gate()->Diagnostics().statuses.size(),
                  static_cast<std::size_t>(1));
   DHEPZ_CHECK_FALSE(app.gate()->Diagnostics().statuses[0].ok);

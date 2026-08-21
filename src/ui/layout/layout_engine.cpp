@@ -160,6 +160,11 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::
                          available.height - padding.top - padding.bottom};
     float cursor = row ? content.x : content.y;
     for (const config::ComponentNode& child : node.children()) {
+      float explicit_width = 0.0f;
+      float explicit_height = 0.0f;
+      const bool has_width = HasExplicitSize(child, L"width", &explicit_width);
+      const bool has_height =
+          HasExplicitSize(child, L"height", &explicit_height);
       render::Rect child_available = content;
       if (row) {
         child_available.x = cursor;
@@ -168,20 +173,22 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::
         child_available.y = cursor;
         child_available.height = std::max(0.0f, content.bottom() - cursor);
       }
-      LayoutNode child_node = Build(child, child_available, model);
-      float explicit_width = 0.0f;
-      float explicit_height = 0.0f;
-      const bool has_width = HasExplicitSize(child, L"width", &explicit_width);
-      const bool has_height = HasExplicitSize(child, L"height", &explicit_height);
       if (has_width) {
-        child_node.bounds.width =
+        child_available.width =
             std::min(std::max(0.0f, explicit_width), child_available.width);
+      }
+      if (has_height) {
+        child_available.height =
+            std::min(std::max(0.0f, explicit_height), child_available.height);
+      }
+      LayoutNode child_node = Build(child, child_available, model);
+      if (has_width) {
+        child_node.bounds.width = child_available.width;
       } else if (!row && align == L"stretch") {
         child_node.bounds.width = child_available.width;
       }
       if (has_height) {
-        child_node.bounds.height =
-            std::min(std::max(0.0f, explicit_height), child_available.height);
+        child_node.bounds.height = child_available.height;
       } else if (row && align == L"stretch") {
         child_node.bounds.height = child_available.height;
       }
