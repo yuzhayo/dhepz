@@ -1,0 +1,9 @@
+{
+  "moduleId": "diagnostics",
+  "tabLabel": "Diagnostics",
+  "order": 900,
+  "showInTabs": false,
+  "actions": ["diagnostics:refresh"],
+  "bindings": [],
+  "capabilities": []
+}
