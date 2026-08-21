@@ -20,14 +20,14 @@ DHEPZ_TEST(Wsl, HeaderlessOutputKeepsFirstDistroAndFinalUnterminatedLine) {
   output.push_back(L'\0');
   output.append(L"\r\n\r\n  Debian  ");
   const std::vector<std::wstring> distros =
-      terminal::WslEnumerator::ParseListOutput(output);
+      terminal::ParseWslListOutput(output);
   DHEPZ_CHECK_EQ(distros.size(), static_cast<std::size_t>(2));
   DHEPZ_CHECK_EQ(distros[0], std::wstring(L"Ubuntu"));
   DHEPZ_CHECK_EQ(distros[1], std::wstring(L"Debian"));
 }
 
 DHEPZ_TEST(Wsl, RecognizedHeaderAndDefaultSuffixAreCompatibilityOnly) {
-  const std::vector<std::wstring> distros = terminal::WslEnumerator::ParseListOutput(
+  const std::vector<std::wstring> distros = terminal::ParseWslListOutput(
       L"Windows Subsystem for Linux Distributions:\r\nUbuntu (Default)\r\n"
       L"Windows Subsystem distro\r\nLiteral(Default)\r\n");
   DHEPZ_CHECK_EQ(distros.size(), static_cast<std::size_t>(3));
@@ -36,43 +36,12 @@ DHEPZ_TEST(Wsl, RecognizedHeaderAndDefaultSuffixAreCompatibilityOnly) {
   DHEPZ_CHECK_EQ(distros[2], std::wstring(L"Literal(Default)"));
 }
 
-DHEPZ_TEST(Wsl, RefreshCachesPerSession) {
-  terminal::WslEnumerator enumerator(
-      [](std::wstring_view, process::RunResult* out) {
-        out->output = kTwoDistros;
-        return core::Ok();
-      });
-  DHEPZ_CHECK(!enumerator.cached());
-  DHEPZ_CHECK(enumerator.Refresh().ok());
-  DHEPZ_CHECK(enumerator.cached());
-  DHEPZ_CHECK_EQ(enumerator.Distros().size(), static_cast<std::size_t>(2));
-}
-
-DHEPZ_TEST(Wsl, FailedRefreshKeepsThePreviousCache) {
-  int calls = 0;
-  terminal::WslEnumerator enumerator([&calls](std::wstring_view, process::RunResult* out) {
-    if (++calls == 1) {
-      out->output = kTwoDistros;
-      return core::Ok();
-    }
-    return core::Err(core::ErrorCode::IoError, L"wsl missing");
-  });
-  DHEPZ_CHECK(enumerator.Refresh().ok());
-  const core::Status failure = enumerator.Refresh();
-  DHEPZ_CHECK(!failure.ok());
-  DHEPZ_CHECK_EQ(failure.Code(), core::ErrorCode::IoError);
-  DHEPZ_CHECK_EQ(failure.Message(), std::wstring(L"wsl missing"));
-  DHEPZ_CHECK_EQ(enumerator.Distros().size(), static_cast<std::size_t>(2));
-}
-
-DHEPZ_TEST(Wsl, ExplicitRefreshPicksUpNewDistros) {
-  int calls = 0;
-  terminal::WslEnumerator enumerator([&calls](std::wstring_view, process::RunResult* out) {
-    out->output = (++calls == 1) ? kTwoDistros : kThreeDistros;
-    return core::Ok();
-  });
-  DHEPZ_CHECK(enumerator.Refresh().ok());
-  DHEPZ_CHECK_EQ(enumerator.Distros().size(), static_cast<std::size_t>(2));
-  DHEPZ_CHECK(enumerator.Refresh().ok());
-  DHEPZ_CHECK_EQ(enumerator.Distros().size(), static_cast<std::size_t>(3));
+DHEPZ_TEST(Wsl, OrderingIsStableAcrossDecodedFixtures) {
+  const std::vector<std::wstring> two = terminal::ParseWslListOutput(kTwoDistros);
+  const std::vector<std::wstring> three = terminal::ParseWslListOutput(kThreeDistros);
+  DHEPZ_CHECK_EQ(two.size(), static_cast<std::size_t>(2));
+  DHEPZ_CHECK_EQ(three.size(), static_cast<std::size_t>(3));
+  DHEPZ_CHECK_EQ(three[0], std::wstring(L"Ubuntu"));
+  DHEPZ_CHECK_EQ(three[1], std::wstring(L"Debian"));
+  DHEPZ_CHECK_EQ(three[2], std::wstring(L"Alpine"));
 }

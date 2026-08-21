@@ -3,7 +3,7 @@
   "tabLabel": "Terminal",
   "order": 10,
   "showInTabs": true,
-  "actions": ["terminal:launch", "terminal:select-folder"],
+  "actions": ["terminal:launch", "terminal:select-folder", "terminal:refresh-wsl"],
   "bindings": [
     "working_folder", "recent_folders", "wsl_distros", "wsl_distro", "admin",
     "powershell_venv", "cmd_venv", "venv_available", "venv_enabled",

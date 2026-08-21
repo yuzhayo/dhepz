@@ -46,10 +46,19 @@ class FakeLaunchHost final : public modules::ModuleHost {
   core::Status StartProcess(const modules::ProcessRequest& value,
                             modules::HostOperationCallback completed,
                             modules::AsyncRequestToken* token) override {
+    if (value.operation == modules::ProcessOperation::Capture) {
+      ++capture_calls;
+      capture_request = value;
+      capture_callback = std::move(completed);
+      token->value = next_token++;
+      capture_token = *token;
+      return core::Ok();
+    }
     ++process_calls;
     request = value;
     callback = std::move(completed);
     token->value = next_token++;
+    process_token = *token;
     return start_status;
   }
   core::Status StartFolderProbe(const modules::FolderProbeRequest& value,
@@ -63,7 +72,7 @@ class FakeLaunchHost final : public modules::ModuleHost {
     return core::Ok();
   }
   void CancelRequest(modules::AsyncRequestToken token) override {
-    cancelled = token;
+    cancelled.push_back(token);
   }
   core::Status PublishStatePatch(const json::Value& patch) override {
     patches.push_back(patch);
@@ -92,7 +101,8 @@ class FakeLaunchHost final : public modules::ModuleHost {
 
   void CompleteProcess(const core::Status& status) {
     modules::HostOperationCompletion completion;
-    completion.token.value = next_token - 1;
+    completion.token = process_token;
+    completion.generation = 1;
     completion.kind = request.operation == modules::ProcessOperation::ElevatedLaunch
                           ? modules::HostOperationKind::ElevatedLaunch
                           : modules::HostOperationKind::Launch;
@@ -100,10 +110,23 @@ class FakeLaunchHost final : public modules::ModuleHost {
     callback(completion);
   }
 
+  void CompleteCapture(const core::Status& status, std::wstring output,
+                       int exit_code = 0) {
+    modules::HostOperationCompletion completion;
+    completion.token = capture_token;
+    completion.generation = 1;
+    completion.kind = modules::HostOperationKind::Capture;
+    completion.status = status;
+    completion.process.output = std::move(output);
+    completion.process.exit_code = exit_code;
+    capture_callback(completion);
+  }
+
   void CompleteFolder(const core::Status& status,
                       modules::FolderProbeResult folder) {
     modules::HostOperationCompletion completion;
     completion.token = folder_token;
+    completion.generation = 1;
     completion.kind = modules::HostOperationKind::FolderProbe;
     completion.status = status;
     completion.folder = std::move(folder);
@@ -112,15 +135,20 @@ class FakeLaunchHost final : public modules::ModuleHost {
 
   core::Status start_status;
   modules::ProcessRequest request;
+  modules::AsyncRequestToken process_token;
   modules::HostOperationCallback callback;
+  modules::ProcessRequest capture_request;
+  modules::HostOperationCallback capture_callback;
+  modules::AsyncRequestToken capture_token;
   modules::HostOperationCallback settings_callback;
   modules::FolderProbeRequest folder_request;
   modules::HostOperationCallback folder_callback;
   modules::AsyncRequestToken folder_token;
-  modules::AsyncRequestToken cancelled;
+  std::vector<modules::AsyncRequestToken> cancelled;
   std::vector<json::Value> patches;
   core::Status reported;
   int process_calls = 0;
+  int capture_calls = 0;
   int folder_calls = 0;
   int settings_writes = 0;
   std::uint64_t next_token = 77;
@@ -302,11 +330,8 @@ DHEPZ_TEST(TerminalModule, UsesHostRequestAndPublishesCancelledCompletion) {
   DHEPZ_CHECK_EQ(host.request.working_directory, std::wstring(L"C:\\work"));
   DHEPZ_CHECK(immediate.BoolField(L"busy"));
 
-  modules::HostOperationCompletion completion;
-  completion.token.value = 77;
-  completion.kind = modules::HostOperationKind::ElevatedLaunch;
-  completion.status = core::Err(core::ErrorCode::Cancelled, L"UAC was cancelled");
-  host.callback(completion);
+  host.CompleteProcess(
+      core::Err(core::ErrorCode::Cancelled, L"UAC was cancelled"));
   DHEPZ_CHECK(host.reported.Code() == core::ErrorCode::Cancelled);
   DHEPZ_CHECK_EQ(host.patches.size(), static_cast<std::size_t>(2));
   DHEPZ_CHECK_FALSE(host.patches.back().BoolField(L"busy"));
@@ -346,6 +371,92 @@ DHEPZ_TEST(TerminalModule, DefaultsRenderBeforeAsyncRecentFoldersLoad) {
   DHEPZ_CHECK_EQ(host.patches.back().ArrayField(L"recent_folders")->size(),
                  static_cast<std::size_t>(2));
   module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, WslCaptureUsesHostAndCacheSurvivesWindowRebind) {
+  FakeLaunchHost first_host;
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(first_host).ok());
+  DHEPZ_CHECK_EQ(first_host.capture_calls, 1);
+  DHEPZ_CHECK(first_host.capture_request.operation ==
+              modules::ProcessOperation::Capture);
+  DHEPZ_CHECK_EQ(first_host.capture_request.executable,
+                 std::wstring(L"wsl.exe"));
+  DHEPZ_CHECK_EQ(first_host.capture_request.arguments.size(),
+                 static_cast<std::size_t>(2));
+  DHEPZ_CHECK_EQ(first_host.capture_request.arguments[0], std::wstring(L"-l"));
+  DHEPZ_CHECK_EQ(first_host.capture_request.arguments[1], std::wstring(L"-q"));
+
+  first_host.CompleteCapture(core::Ok(), L"Ubuntu\r\ndocker-desktop\r\n");
+  DHEPZ_CHECK_EQ(first_host.patches.back().ArrayField(L"wsl_distros")->size(),
+                 static_cast<std::size_t>(2));
+  DHEPZ_CHECK_EQ(first_host.patches.back().StringField(L"wsl_distro"),
+                 std::wstring(L"Ubuntu"));
+  module->Release();
+
+  FakeLaunchHost rebound_host;
+  DHEPZ_CHECK(module->Bind(rebound_host).ok());
+  DHEPZ_CHECK_EQ(rebound_host.capture_calls, 0);
+  DHEPZ_CHECK_EQ(rebound_host.patches.front().ArrayField(L"wsl_distros")->size(),
+                 static_cast<std::size_t>(2));
+  module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, NewerWslRefreshWinsAndFailureRetainsCache) {
+  FakeLaunchHost host;
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(host).ok());
+  host.CompleteCapture(core::Ok(), L"Ubuntu\n");
+  host.patches.clear();
+
+  json::Value immediate;
+  DHEPZ_CHECK(module->Handle(L"terminal:refresh-wsl", json::Value::Object(),
+                             &immediate).ok());
+  const modules::HostOperationCallback stale_callback = host.capture_callback;
+  const modules::AsyncRequestToken stale_token = host.capture_token;
+  DHEPZ_CHECK(immediate.BoolField(L"busy"));
+  DHEPZ_CHECK(module->Handle(L"terminal:refresh-wsl", json::Value::Object(),
+                             &immediate).ok());
+  DHEPZ_CHECK(std::find(host.cancelled.begin(), host.cancelled.end(), stale_token) !=
+              host.cancelled.end());
+
+  modules::HostOperationCompletion stale;
+  stale.token = stale_token;
+  stale.generation = 1;
+  stale.kind = modules::HostOperationKind::Capture;
+  stale.process.output = L"Stale\n";
+  stale_callback(stale);
+  DHEPZ_CHECK(host.patches.empty());
+
+  host.CompleteCapture(
+      core::Err(core::ErrorCode::IoError, L"wsl unavailable"), L"");
+  DHEPZ_CHECK_EQ(host.reported.Code(), core::ErrorCode::IoError);
+  DHEPZ_CHECK_EQ(host.reported.Message(), std::wstring(L"wsl unavailable"));
+  DHEPZ_CHECK_EQ(host.patches.back().ArrayField(L"wsl_distros")->size(),
+                 static_cast<std::size_t>(1));
+  DHEPZ_CHECK_EQ(host.patches.back().StringField(L"wsl_distro"),
+                 std::wstring(L"Ubuntu"));
+  module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, ReleaseCancelsWslAndDropsItsCompletion) {
+  FakeLaunchHost host;
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(host).ok());
+  const modules::HostOperationCallback callback = host.capture_callback;
+  const modules::AsyncRequestToken token = host.capture_token;
+  host.patches.clear();
+  module->Release();
+  DHEPZ_CHECK(std::find(host.cancelled.begin(), host.cancelled.end(), token) !=
+              host.cancelled.end());
+
+  modules::HostOperationCompletion completion;
+  completion.token = token;
+  completion.generation = 1;
+  completion.kind = modules::HostOperationKind::Capture;
+  completion.process.output = L"Too late\n";
+  callback(completion);
+  DHEPZ_CHECK(host.patches.empty());
 }
 
 DHEPZ_TEST(TerminalModule, FolderProbePublishesCompatibleVenvCandidates) {
