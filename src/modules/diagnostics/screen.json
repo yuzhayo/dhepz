@@ -1,0 +1,15 @@
+{
+  "components": [
+    {
+      "type": "screen",
+      "route_id": "diagnostics",
+      "module_id": "diagnostics",
+      "tab_label": "Diagnostics",
+      "show_in_tabs": false,
+      "children": [
+        { "type": "text", "text": "Diagnostics", "variant": "title" },
+        { "type": "text", "text": "Rejected modules appear here with file and line. The rendered list lands with viewState bindings; until then rejections are logged and exported to CI." }
+      ]
+    }
+  ]
+}

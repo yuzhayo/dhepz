@@ -1,5 +1,6 @@
 #include "modules/gate/app_gate.h"
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 
@@ -12,7 +13,14 @@ namespace {
 
 std::vector<RegisteredModule> RegistrySnapshot() { return CollectModules(); }
 
+const std::vector<RejectEntry>* g_rejects = nullptr;
+
 }  // namespace
+
+const std::vector<RejectEntry>& CurrentRejects() {
+  static const std::vector<RejectEntry> empty;
+  return g_rejects != nullptr ? *g_rejects : empty;
+}
 
 // Per-module host view. Settings reach is narrowed here by construction:
 // writes land only in the module's own section; global is read-only.
@@ -132,7 +140,10 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
       ModuleManifest manifest;
       std::vector<ManifestDiagnostic> manifest_diags;
       if (!ParseManifest(json::Serialize(manifest_value), &manifest, &manifest_diags).ok()) {
-        rejects_.push_back({manifest.module_id.empty() ? L"?" : manifest.module_id,
+        const json::Value* raw_id = manifest_value.Find(L"moduleId");
+        const std::wstring id =
+            (raw_id != nullptr && raw_id->is_string()) ? raw_id->AsString() : L"?";
+        rejects_.push_back({id,
                             L"manifest invalid: " +
                                 (manifest_diags.empty() ? L"?" : manifest_diags[0].message)});
         continue;
@@ -169,6 +180,22 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
         rejects_.push_back({manifest.module_id,
                             L"DeclaredCapabilities() does not match module.json"});
         continue;
+      }
+      {
+        const std::vector<std::wstring> code_actions = descriptor->DeclaredActions();
+        std::vector<std::wstring> missing_in_code;
+        for (const std::wstring& action : manifest.actions) {
+          if (std::find(code_actions.begin(), code_actions.end(), action) ==
+              code_actions.end()) {
+            missing_in_code.push_back(action);
+          }
+        }
+        if (!missing_in_code.empty()) {
+          rejects_.push_back({manifest.module_id,
+                              L"action '" + missing_in_code[0] +
+                                  L"' declared in module.json has no handler in C++"});
+          continue;
+        }
       }
       bool capability_ok = true;
       for (const std::wstring& cap : declared) {
@@ -229,6 +256,7 @@ core::Status AppGate::PairAndMount(std::wstring_view embedded_text,
   }
 
   current_route_ = document_->initial_route();
+  g_rejects = &rejects_;
   return core::Ok();
 }
 

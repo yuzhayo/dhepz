@@ -25,6 +25,10 @@ struct RejectEntry {
   std::wstring reason;
 };
 
+// Reject list of the most recent gate Start — the diagnostics module reads
+// this; there is exactly one gate (single choke point).
+const std::vector<RejectEntry>& CurrentRejects();
+
 class GateHost;
 
 class AppGate final {
