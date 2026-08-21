@@ -166,6 +166,21 @@ ui::config::ScreenSource FilterAcceptedSource(
   return {source.name, json::Serialize(filtered)};
 }
 
+ui::config::ScreenSource FilterWithdrawnSource(
+    const ui::config::ScreenSource& source, std::wstring_view module_id) {
+  json::Value document;
+  if (!json::Parse(source.text, &document).ok()) return source;
+  const json::Value* components = document.Find(L"components");
+  if (components == nullptr || !components->is_array()) return source;
+  json::Value filtered = json::Value::Object();
+  json::Value kept = json::Value::Array();
+  for (const json::Value& component : components->items()) {
+    if (component.StringField(L"module_id") != module_id) kept.Append(component);
+  }
+  filtered.Set(L"components", std::move(kept));
+  return {source.name, json::Serialize(filtered)};
+}
+
 core::Status ParseEnvelope(
     std::wstring_view embedded_text, std::wstring_view override_text,
     json::Value* envelope, json::Value* core_catalog,
@@ -255,7 +270,8 @@ core::Status ModuleValidator::Validate(
             {id,
              diagnostic.message.empty() ? valid.Message() : diagnostic.message,
              source.name, diagnostic.line > 0 ? diagnostic.line : 1,
-             diagnostic.column > 0 ? diagnostic.column : 1});
+             diagnostic.column > 0 ? diagnostic.column : 1,
+             DiagnosticStage::Pairing});
         schema_rejected.insert(id);
         continue;
       }
@@ -293,7 +309,8 @@ core::Status ModuleValidator::Validate(
         const core::Status parsed = json::Parse(manifest_text, &parsed_manifest);
         if (!parsed.ok()) {
           out->rejects.push_back(
-              {L"?", L"manifest invalid: " + parsed.Message(), manifest_file, 1, 1});
+              {L"?", L"manifest invalid: " + parsed.Message(), manifest_file, 1, 1,
+               DiagnosticStage::Manifest});
           continue;
         }
         manifest_value = &parsed_manifest;
@@ -317,18 +334,20 @@ core::Status ModuleValidator::Validate(
                  (diagnostic.message.empty() ? L"unknown error"
                                              : diagnostic.message),
              manifest_file, diagnostic.line > 0 ? diagnostic.line : 1,
-             diagnostic.column > 0 ? diagnostic.column : 1});
+             diagnostic.column > 0 ? diagnostic.column : 1,
+             DiagnosticStage::Manifest});
         continue;
       }
       const int manifest_line = raw_id != nullptr ? raw_id->line() : 1;
       const int manifest_column = raw_id != nullptr ? raw_id->column() : 1;
       auto reject = [&](std::wstring reason, std::wstring file = {}, int line = 0,
-                        int column = 0) {
+                        int column = 0,
+                        DiagnosticStage stage = DiagnosticStage::Pairing) {
         out->rejects.push_back(
             {manifest.module_id, std::move(reason),
              file.empty() ? manifest_file : std::move(file),
              line > 0 ? line : manifest_line,
-             column > 0 ? column : manifest_column});
+             column > 0 ? column : manifest_column, stage});
       };
 
       const RegisteredModule* registration = nullptr;
@@ -475,13 +494,15 @@ core::Status ModuleValidator::Validate(
         if (capability == kCapabilitySettingsAll) {
           if (manifest.module_id != L"settings") {
             reject(L"settings:all is reserved for module 'settings'",
-                   manifest_file, capability_line, capability_column);
+                   manifest_file, capability_line, capability_column,
+                   DiagnosticStage::Capability);
             capability_ok = false;
             break;
           }
           if (settings_all_claimed) {
             reject(L"settings:all already claimed by module 'settings'",
-                   manifest_file, capability_line, capability_column);
+                   manifest_file, capability_line, capability_column,
+                   DiagnosticStage::Capability);
             capability_ok = false;
             break;
           }
@@ -489,20 +510,23 @@ core::Status ModuleValidator::Validate(
         } else if (capability == kCapabilityConfigWrite) {
           if (manifest.module_id != L"ui-editor") {
             reject(L"config:write is reserved for module 'ui-editor'",
-                   manifest_file, capability_line, capability_column);
+                   manifest_file, capability_line, capability_column,
+                   DiagnosticStage::Capability);
             capability_ok = false;
             break;
           }
           if (config_write_claimed) {
             reject(L"config:write already claimed by module 'ui-editor'",
-                   manifest_file, capability_line, capability_column);
+                   manifest_file, capability_line, capability_column,
+                   DiagnosticStage::Capability);
             capability_ok = false;
             break;
           }
           config_write_granted = true;
         } else {
           reject(L"unknown capability '" + capability + L"'", manifest_file,
-                 capability_line, capability_column);
+                 capability_line, capability_column,
+                 DiagnosticStage::Capability);
           capability_ok = false;
           break;
         }
@@ -561,7 +585,8 @@ core::Status ModuleValidator::Validate(
   for (const std::wstring& id : screen_module_ids) {
     if (!manifest_ids.contains(id)) {
       out->rejects.push_back({id, L"screen half has no module.json manifest",
-                              ScreenSourceForModule(resolvable_sources, id), 1, 1});
+                              ScreenSourceForModule(resolvable_sources, id), 1, 1,
+                              DiagnosticStage::Pairing});
     }
   }
   for (const RegisteredModule& registration : registered) {
@@ -569,7 +594,8 @@ core::Status ModuleValidator::Validate(
         !screen_module_ids.contains(registration.module_id)) {
       out->rejects.push_back({registration.module_id,
                               L"logic half has no module.json manifest",
-                              L"registry", 1, 1});
+                              L"registry", 1, 1,
+                              DiagnosticStage::Pairing});
     }
   }
 
@@ -599,7 +625,28 @@ core::Status ModuleValidator::Validate(
   }
   accepted_document.Set(L"components", std::move(accepted_components));
   out->accepted_base = {L"embedded", json::Serialize(accepted_document)};
+  out->accepted_sources = accepted_sources;
   return core::Ok();
+}
+
+core::Status ModuleValidator::WithdrawModule(
+    const json::Value& core_catalog,
+    const std::vector<ui::config::ScreenSource>& current_sources,
+    std::wstring_view module_id,
+    std::vector<ui::config::ScreenSource>* filtered_sources,
+    std::unique_ptr<ui::config::ResolvedUiDocument>* document) const {
+  if (filtered_sources == nullptr || document == nullptr || module_id.empty()) {
+    return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                     L"WithdrawModule requires outputs and a module id");
+  }
+  filtered_sources->clear();
+  filtered_sources->reserve(current_sources.size());
+  for (const ui::config::ScreenSource& source : current_sources) {
+    filtered_sources->push_back(FilterWithdrawnSource(source, module_id));
+  }
+  std::vector<ui::config::Diagnostic> diagnostics;
+  return ui::config::ResolveDocument(core_catalog, *filtered_sources,
+                                     &diagnostics, document);
 }
 
 }  // namespace modules

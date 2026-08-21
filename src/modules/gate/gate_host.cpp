@@ -11,6 +11,8 @@ namespace modules {
 GateHost::GateHost(std::wstring module_id,
                    HostRouteRequestHandler route_request_handler,
                    HostPeersHandler peers_handler,
+                   HostDiagnosticsProvider diagnostics_provider,
+                   HostStatusHandler status_handler,
                    SettingsAccessService* settings_service,
                    ConfigTransactionService* config_service,
                    bool settings_all_granted, bool config_write_granted,
@@ -20,6 +22,8 @@ GateHost::GateHost(std::wstring module_id,
     : module_id_(std::move(module_id)),
       route_request_handler_(std::move(route_request_handler)),
       peers_handler_(std::move(peers_handler)),
+      diagnostics_provider_(std::move(diagnostics_provider)),
+      status_handler_(std::move(status_handler)),
       settings_service_(settings_service),
       config_service_(config_service),
       settings_all_granted_(settings_all_granted),
@@ -35,7 +39,7 @@ GateHost::GateHost(std::wstring module_id,
       operation_window, operation_message, std::move(sink));
 }
 
-GateHost::~GateHost() = default;
+GateHost::~GateHost() { lifetime_alive_->store(false); }
 
 ModuleSurface GateHost::Surface() { return surface_; }
 
@@ -55,7 +59,17 @@ core::Status GateHost::SettingsWrite(std::wstring_view key,
 
 core::Status GateHost::StartSettingsLoad(HostOperationCallback callback,
                                          AsyncRequestToken* token) {
-  return settings_service_->StartLoad(std::move(callback), token);
+  if (!callback) {
+    return core::Err(core::ErrorCode::InvalidArgument,
+                     L"settings-ready callback is required");
+  }
+  const std::shared_ptr<std::atomic<bool>> alive = lifetime_alive_;
+  return settings_service_->StartLoad(
+      [alive, callback = std::move(callback)](
+          const HostOperationCompletion& completion) {
+        if (alive->load()) callback(completion);
+      },
+      token);
 }
 
 core::Status GateHost::StartProcess(const ProcessRequest& request,
@@ -115,6 +129,10 @@ core::Status GateHost::GetConfigWriteFacet(ConfigWriteFacet** facet) {
                          L"config:write is not granted");
 }
 
+DiagnosticsReadModel GateHost::Diagnostics() {
+  return diagnostics_provider_ ? diagnostics_provider_() : DiagnosticsReadModel{};
+}
+
 core::Status GateHost::ReadGlobal(std::wstring_view key, std::wstring* out) {
   return settings_service_->ReadGlobal(key, out);
 }
@@ -172,7 +190,10 @@ core::Status GateHost::Discard(
   return config_service_->Discard(preview, affected_routes);
 }
 
-void GateHost::ReportStatus(const core::Status& status) { last_status_ = status; }
+void GateHost::ReportStatus(const core::Status& status) {
+  last_status_ = status;
+  if (status_handler_) status_handler_(module_id_, status);
+}
 
 void GateHost::Log(std::wstring_view level, std::wstring_view text) {
   std::lock_guard lock(mutex_);

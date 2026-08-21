@@ -16,21 +16,8 @@
 
 namespace modules {
 
-struct RejectEntry {
-  std::wstring module_id;
-  std::wstring reason;
-  std::wstring file;
-  int line = 0;
-  int column = 0;
-};
-
-struct CapabilityGrant {
-  std::wstring module_id;
-  std::wstring capability;
-  std::wstring file;
-  int line = 0;
-  int column = 0;
-};
+using RejectEntry = ModuleDiagnosticEntry;
+using CapabilityGrant = CapabilityGrantInfo;
 
 struct ValidatedModule {
   ModuleManifest manifest;
@@ -47,6 +34,7 @@ struct ModuleValidationResult {
   std::vector<RejectEntry> rejects;
   std::vector<CapabilityGrant> grants;
   std::vector<std::pair<std::wstring, std::wstring>> action_map;
+  std::vector<ui::config::ScreenSource> accepted_sources;
 };
 
 class ModuleValidator final {
@@ -55,6 +43,12 @@ class ModuleValidator final {
                         std::wstring_view override_text,
                         const std::vector<RegisteredModule>& registered,
                         ModuleValidationResult* out) const;
+  core::Status WithdrawModule(
+      const json::Value& core_catalog,
+      const std::vector<ui::config::ScreenSource>& current_sources,
+      std::wstring_view module_id,
+      std::vector<ui::config::ScreenSource>* filtered_sources,
+      std::unique_ptr<ui::config::ResolvedUiDocument>* document) const;
 };
 
 }  // namespace modules

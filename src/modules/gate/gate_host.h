@@ -2,6 +2,7 @@
 // translates that contract into the services owned by the application.
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -23,6 +24,9 @@ using HostStatePatchHandler =
 using HostRouteRequestHandler =
     std::function<core::Status(std::wstring_view route_id)>;
 using HostPeersHandler = std::function<std::vector<PeerInfo>()>;
+using HostDiagnosticsProvider = std::function<DiagnosticsReadModel()>;
+using HostStatusHandler =
+    std::function<void(std::wstring_view module_id, const core::Status& status)>;
 
 class GateHost final : public ModuleHost,
                        public SettingsAllFacet,
@@ -31,6 +35,8 @@ class GateHost final : public ModuleHost,
   GateHost(std::wstring module_id,
            HostRouteRequestHandler route_request_handler,
            HostPeersHandler peers_handler,
+           HostDiagnosticsProvider diagnostics_provider,
+           HostStatusHandler status_handler,
            SettingsAccessService* settings_service,
            ConfigTransactionService* config_service,
            bool settings_all_granted, bool config_write_granted,
@@ -55,6 +61,7 @@ class GateHost final : public ModuleHost,
   core::Status PublishStatePatch(const json::Value& patch) override;
   core::Status GetSettingsAllFacet(SettingsAllFacet** facet) override;
   core::Status GetConfigWriteFacet(ConfigWriteFacet** facet) override;
+  DiagnosticsReadModel Diagnostics() override;
   core::Status ReadGlobal(std::wstring_view key, std::wstring* out) override;
   core::Status WriteGlobal(std::wstring_view key,
                            std::wstring_view value) override;
@@ -81,6 +88,8 @@ class GateHost final : public ModuleHost,
   std::wstring module_id_;
   HostRouteRequestHandler route_request_handler_;
   HostPeersHandler peers_handler_;
+  HostDiagnosticsProvider diagnostics_provider_;
+  HostStatusHandler status_handler_;
   SettingsAccessService* settings_service_;
   ConfigTransactionService* config_service_;
   bool settings_all_granted_ = false;
@@ -90,6 +99,8 @@ class GateHost final : public ModuleHost,
   std::vector<std::wstring> log_;
   core::Status last_status_;
   std::unique_ptr<HostOperationDispatcher> operations_;
+  std::shared_ptr<std::atomic<bool>> lifetime_alive_ =
+      std::make_shared<std::atomic<bool>>(true);
 };
 
 }  // namespace modules

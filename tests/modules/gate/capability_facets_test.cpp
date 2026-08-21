@@ -315,6 +315,10 @@ DHEPZ_TEST(CapabilityFacets, SettingsAllIsTypedSharedAndRestrictedToSettingsModu
   DHEPZ_CHECK(gate.Rejects()[0].reason.find(L"settings:all") != std::wstring::npos);
   DHEPZ_CHECK(!gate.Rejects()[0].file.empty());
   DHEPZ_CHECK(gate.Rejects()[0].line > 0);
+  const modules::DiagnosticsReadModel diagnostics = gate.Diagnostics();
+  DHEPZ_CHECK_EQ(diagnostics.accepted.size(), static_cast<std::size_t>(2));
+  DHEPZ_CHECK_EQ(diagnostics.rejected.size(), static_cast<std::size_t>(1));
+  DHEPZ_CHECK_EQ(diagnostics.grants.size(), static_cast<std::size_t>(1));
 
   DHEPZ_CHECK(gate.Activate(L"settings-home").ok());
   DHEPZ_CHECK(gate.Activate(L"alpha-home").ok());
