@@ -67,6 +67,22 @@ bool ReferencesAny(const json::Value& value,
   return false;
 }
 
+bool NamedBindingReferences(std::wstring_view property,
+                            const json::Value& value,
+                            const std::vector<std::wstring>& changed) {
+  if (property != L"value_binding" && property != L"items_binding" &&
+      property != L"selected_value_binding" &&
+      property != L"checked_binding" &&
+      property != L"selected_id_binding") {
+    return false;
+  }
+  if (!value.is_string()) return false;
+  const std::wstring& binding = value.AsString();
+  const std::size_t dot = binding.find(L'.');
+  return std::find(changed.begin(), changed.end(), binding.substr(0, dot)) !=
+         changed.end();
+}
+
 void MergeObject(json::Value* target, const json::Value& patch) {
   for (const auto& [key, value] : patch.members()) {
     if (value.is_null()) {
@@ -240,6 +256,50 @@ bool ScreenPresenter::ClickNode(const layout::LayoutNode& node, float x, float y
   }
   const std::wstring id = focus_.IdFor(route_, source);
   bool handled = !id.empty() && focus_.SetFocus(route_, id);
+  const std::wstring& type = source->type();
+  if (type == L"combo") {
+    const json::Value* items_binding = source->Property(L"items_binding");
+    const json::Value* selected_binding =
+        source->Property(L"selected_value_binding");
+    if (items_binding != nullptr && items_binding->is_string() &&
+        selected_binding != nullptr && selected_binding->is_string()) {
+      const json::Value* items = ResolveBinding(route_, items_binding->AsString());
+      if (items != nullptr && items->is_array() && !items->items().empty()) {
+        std::wstring selected;
+        if (const json::Value* current =
+                ResolveBinding(route_, selected_binding->AsString());
+            current != nullptr && current->is_string()) {
+          selected = current->AsString();
+        }
+        std::size_t next = 0;
+        for (std::size_t i = 0; i < items->items().size(); ++i) {
+          if (items->items()[i].is_string() &&
+              items->items()[i].AsString() == selected) {
+            next = (i + 1) % items->items().size();
+            break;
+          }
+        }
+        if (items->items()[next].is_string()) {
+          json::Value patch = json::Value::Object();
+          patch.Set(selected_binding->AsString(), items->items()[next]);
+          handled = ApplyStatePatch(route_, patch).ok() || handled;
+        }
+      }
+    }
+  } else if (type == L"toggle" || type == L"checkbox") {
+    const json::Value* checked_binding = source->Property(L"checked_binding");
+    if (checked_binding != nullptr && checked_binding->is_string()) {
+      bool checked = false;
+      if (const json::Value* current =
+              ResolveBinding(route_, checked_binding->AsString());
+          current != nullptr && current->is_bool()) {
+        checked = current->AsBool();
+      }
+      json::Value patch = json::Value::Object();
+      patch.Set(checked_binding->AsString(), json::Value::Bool(!checked));
+      handled = ApplyStatePatch(route_, patch).ok() || handled;
+    }
+  }
   const std::wstring action = source->GetString(L"action");
   if (!action.empty() && action_dispatch_handler_) {
     json::Value payload = json::Value::Object();
@@ -380,6 +440,48 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
                             render::TextStyle{},
                             Token(L"text", {255, 255, 255, 255}), render::TextAlign::Center,
                             render::VerticalAlign::Middle);
+    } else if (type == L"input" || type == L"combo") {
+      backend_->StrokeRoundedRect(node.bounds, render::CornerRadius::Uniform(5.0f),
+                                  Token(L"borderStrong", {70, 76, 88, 255}), 1.0f);
+      const std::wstring binding_property =
+          type == L"input" ? L"value_binding" : L"selected_value_binding";
+      std::wstring value;
+      if (const json::Value* binding = source->Property(binding_property);
+          binding != nullptr && binding->is_string()) {
+        if (const json::Value* resolved = ResolveBinding(route_, binding->AsString());
+            resolved != nullptr && resolved->is_string()) {
+          value = resolved->AsString();
+        }
+      }
+      if (value.empty()) value = source->GetString(L"placeholder");
+      if (type == L"combo" && !value.empty()) value += L"  \u25BE";
+      backend_->DrawTextRun(value, node.bounds, render::TextStyle{},
+                            Token(L"text", {255, 255, 255, 255}),
+                            render::TextAlign::Left, render::VerticalAlign::Middle);
+    } else if (type == L"toggle" || type == L"checkbox") {
+      bool checked = false;
+      if (const json::Value* binding = source->Property(L"checked_binding");
+          binding != nullptr && binding->is_string()) {
+        if (const json::Value* value = ResolveBinding(route_, binding->AsString());
+            value != nullptr && value->is_bool()) {
+          checked = value->AsBool();
+        }
+      }
+      const render::Rect mark{node.bounds.x, node.bounds.y + 6.0f, 18.0f, 18.0f};
+      backend_->StrokeRoundedRect(mark, render::CornerRadius::Uniform(5.0f),
+                                  Token(L"borderStrong", {70, 76, 88, 255}), 1.0f);
+      if (checked) {
+        const render::Rect fill{mark.x + 3.0f, mark.y + 3.0f,
+                                mark.width - 6.0f, mark.height - 6.0f};
+        backend_->FillRoundedRect(fill, render::CornerRadius::Uniform(3.0f),
+                                  Token(L"accent", {96, 165, 250, 255}));
+      }
+      const render::Rect label{node.bounds.x + 26.0f, node.bounds.y,
+                               std::max(0.0f, node.bounds.width - 26.0f),
+                               node.bounds.height};
+      backend_->DrawTextRun(ResolvedString(*source, L"label"), label,
+                            render::TextStyle{}, Token(L"text", {255, 255, 255, 255}),
+                            render::TextAlign::Left, render::VerticalAlign::Middle);
     }
     if (source == focused_node_) {
       const render::Rect ring{node.bounds.x - 2.0f, node.bounds.y - 2.0f,
@@ -472,8 +574,8 @@ void ScreenPresenter::InvalidateBoundNodes(
   if (node.source != nullptr) {
     bool affected = false;
     for (const auto& [key, value] : node.source->properties_) {
-      (void)key;
-      if (ReferencesAny(value, changed)) {
+      if (ReferencesAny(value, changed) ||
+          NamedBindingReferences(key, value, changed)) {
         affected = true;
         break;
       }
