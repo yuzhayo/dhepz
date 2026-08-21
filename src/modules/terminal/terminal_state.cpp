@@ -1,7 +1,5 @@
 #include "modules/terminal/terminal_state.h"
 
-#include <windows.h>
-
 #include "core/json.h"
 
 namespace terminal {
@@ -9,10 +7,6 @@ namespace {
 
 constexpr std::wstring_view kRecentKey = L"recent_folders";
 constexpr std::size_t kRecentCap = 10;
-
-bool FileExists(const std::wstring& path) {
-  return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
-}
 
 }  // namespace
 
@@ -46,38 +40,12 @@ void RecentFolders::Load(modules::ModuleHost& host) {
   }
 }
 
-void RecentFolders::Save(modules::ModuleHost& host) const {
+core::Status RecentFolders::Save(modules::ModuleHost& host) const {
   json::Value array = json::Value::Array();
   for (const std::wstring& folder : folders_) {
     array.Append(json::Value::String(folder));
   }
-  const core::Status saved = host.SettingsWrite(kRecentKey, json::Serialize(array, false));
-  (void)saved;  // persistence is best-effort; a failed write keeps the session list
-}
-
-bool DetectVenv(const std::wstring& folder) {
-  return FileExists(folder + L"\\Scripts\\activate.bat") ||
-         FileExists(folder + L"\\bin\\activate");
-}
-
-std::wstring VenvActivatePath(const std::wstring& folder) {
-  if (FileExists(folder + L"\\Scripts\\activate.bat")) {
-    return folder + L"\\Scripts\\activate.bat";
-  }
-  return folder + L"\\bin\\activate";
-}
-
-core::Status ValidateFolder(const std::wstring& folder) {
-  const DWORD attributes = GetFileAttributesW(folder.c_str());
-  if (attributes == INVALID_FILE_ATTRIBUTES) {
-    return core::Err(core::ErrorCode::NotFound,
-                     L"folder does not exist: " + folder);
-  }
-  if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-    return core::Err(core::ErrorCode::InvalidArgument,
-                     L"not a directory: " + folder);
-  }
-  return core::Ok();
+  return host.SettingsWrite(kRecentKey, json::Serialize(array, false));
 }
 
 }  // namespace terminal

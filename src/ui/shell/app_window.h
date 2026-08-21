@@ -112,6 +112,7 @@ class AppWindow final {
   // inside a frame. Unset costs nothing.
   void set_content_layout(std::function<void(const render::Rect&)> layout);
   void set_content_key_handler(std::function<bool(int virtual_key)> handler);
+  void set_content_text_handler(std::function<bool(wchar_t character)> handler);
   void set_content_click_handler(std::function<bool(float x_logical, float y_logical)> handler);
   // Hover and press feedback for content components; return true to repaint.
   void set_content_move_handler(std::function<bool(float x_logical, float y_logical)> handler);
@@ -156,6 +157,7 @@ class AppWindow final {
   std::function<void(render::GdiBackend&, const render::Rect&)> content_painter_;
   std::function<void(const render::Rect&)> content_layout_;
   std::function<bool(int)> content_key_handler_;
+  std::function<bool(wchar_t)> content_text_handler_;
   std::function<bool(float, float)> content_click_handler_;
   std::function<bool(float, float)> content_move_handler_;
   std::function<bool(float, float)> content_down_handler_;

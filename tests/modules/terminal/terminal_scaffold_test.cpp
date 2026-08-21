@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -16,18 +17,31 @@ namespace {
 class FakeLaunchHost final : public modules::ModuleHost {
  public:
   modules::ModuleSurface Surface() override { return {}; }
-  core::Status SettingsRead(std::wstring_view, std::wstring*) override {
-    return core::Err(core::ErrorCode::NotFound, L"not configured");
+  core::Status SettingsRead(std::wstring_view key, std::wstring* out) override {
+    const auto found = settings.find(std::wstring(key));
+    if (found == settings.end()) {
+      return core::Err(core::ErrorCode::NotFound, L"not configured");
+    }
+    *out = found->second;
+    return core::Ok();
   }
   core::Status SettingsReadGlobal(std::wstring_view, std::wstring*) override {
     return core::Err(core::ErrorCode::NotFound, L"not configured");
   }
-  core::Status SettingsWrite(std::wstring_view, std::wstring_view) override {
+  core::Status SettingsWrite(std::wstring_view key,
+                             std::wstring_view value) override {
+    ++settings_writes;
+    settings[std::wstring(key)] = std::wstring(value);
     return core::Ok();
   }
-  core::Status StartSettingsLoad(modules::HostOperationCallback,
-                                 modules::AsyncRequestToken*) override {
-    return core::Err(core::ErrorCode::Unsupported, L"not configured");
+  core::Status StartSettingsLoad(modules::HostOperationCallback completed,
+                                 modules::AsyncRequestToken* token) override {
+    if (!settings_enabled) {
+      return core::Err(core::ErrorCode::Unsupported, L"not configured");
+    }
+    settings_callback = std::move(completed);
+    token->value = 10;
+    return core::Ok();
   }
   core::Status StartProcess(const modules::ProcessRequest& value,
                             modules::HostOperationCallback completed,
@@ -35,13 +49,18 @@ class FakeLaunchHost final : public modules::ModuleHost {
     ++process_calls;
     request = value;
     callback = std::move(completed);
-    token->value = 77;
+    token->value = next_token++;
     return start_status;
   }
-  core::Status StartFolderProbe(const modules::FolderProbeRequest&,
-                                modules::HostOperationCallback,
-                                modules::AsyncRequestToken*) override {
-    return core::Err(core::ErrorCode::Unsupported, L"not configured");
+  core::Status StartFolderProbe(const modules::FolderProbeRequest& value,
+                                modules::HostOperationCallback completed,
+                                modules::AsyncRequestToken* token) override {
+    ++folder_calls;
+    folder_request = value;
+    folder_callback = std::move(completed);
+    token->value = next_token++;
+    folder_token = *token;
+    return core::Ok();
   }
   void CancelRequest(modules::AsyncRequestToken token) override {
     cancelled = token;
@@ -63,13 +82,50 @@ class FakeLaunchHost final : public modules::ModuleHost {
   core::Status RequestRoute(std::wstring_view) override { return core::Ok(); }
   std::vector<modules::PeerInfo> Peers() override { return {}; }
 
+  void CompleteSettings(const core::Status& status = core::Ok()) {
+    modules::HostOperationCompletion completion;
+    completion.token.value = 10;
+    completion.kind = modules::HostOperationKind::SettingsLoad;
+    completion.status = status;
+    settings_callback(completion);
+  }
+
+  void CompleteProcess(const core::Status& status) {
+    modules::HostOperationCompletion completion;
+    completion.token.value = next_token - 1;
+    completion.kind = request.operation == modules::ProcessOperation::ElevatedLaunch
+                          ? modules::HostOperationKind::ElevatedLaunch
+                          : modules::HostOperationKind::Launch;
+    completion.status = status;
+    callback(completion);
+  }
+
+  void CompleteFolder(const core::Status& status,
+                      modules::FolderProbeResult folder) {
+    modules::HostOperationCompletion completion;
+    completion.token = folder_token;
+    completion.kind = modules::HostOperationKind::FolderProbe;
+    completion.status = status;
+    completion.folder = std::move(folder);
+    folder_callback(completion);
+  }
+
   core::Status start_status;
   modules::ProcessRequest request;
   modules::HostOperationCallback callback;
+  modules::HostOperationCallback settings_callback;
+  modules::FolderProbeRequest folder_request;
+  modules::HostOperationCallback folder_callback;
+  modules::AsyncRequestToken folder_token;
   modules::AsyncRequestToken cancelled;
   std::vector<json::Value> patches;
   core::Status reported;
   int process_calls = 0;
+  int folder_calls = 0;
+  int settings_writes = 0;
+  std::uint64_t next_token = 77;
+  bool settings_enabled = false;
+  std::map<std::wstring, std::wstring> settings;
 };
 
 std::wstring Ws(const std::string& narrow) {
@@ -272,4 +328,123 @@ DHEPZ_TEST(TerminalModule, InvalidPayloadNeverInvokesHost) {
   DHEPZ_CHECK_FALSE(status.ok());
   DHEPZ_CHECK_EQ(host.process_calls, 0);
   module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, DefaultsRenderBeforeAsyncRecentFoldersLoad) {
+  FakeLaunchHost host;
+  host.settings_enabled = true;
+  host.settings[L"recent_folders"] = L"[\"C:\\\\old\",\"C:\\\\new\"]";
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(host).ok());
+  DHEPZ_CHECK_EQ(host.patches.size(), static_cast<std::size_t>(1));
+  DHEPZ_CHECK_EQ(host.patches[0].StringField(L"status"), std::wstring(L"Ready"));
+  DHEPZ_CHECK_EQ(host.patches[0].ArrayField(L"recent_folders")->size(),
+                 static_cast<std::size_t>(0));
+
+  host.CompleteSettings();
+  DHEPZ_CHECK_EQ(host.patches.size(), static_cast<std::size_t>(2));
+  DHEPZ_CHECK_EQ(host.patches.back().ArrayField(L"recent_folders")->size(),
+                 static_cast<std::size_t>(2));
+  module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, FolderProbePublishesCompatibleVenvCandidates) {
+  FakeLaunchHost host;
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(host).ok());
+  host.patches.clear();
+  json::Value payload;
+  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\work"})", &payload).ok());
+  json::Value immediate;
+  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", payload, &immediate).ok());
+  DHEPZ_CHECK_EQ(host.folder_calls, 1);
+  DHEPZ_CHECK(immediate.BoolField(L"busy"));
+  DHEPZ_CHECK_EQ(host.folder_request.relative_files.size(),
+                 static_cast<std::size_t>(2));
+
+  modules::FolderProbeResult folder;
+  folder.normalized_directory = L"C:\\work";
+  folder.directory_exists = true;
+  folder.files = {{L".venv\\Scripts\\Activate.ps1", true},
+                  {L".venv\\Scripts\\activate.bat", false}};
+  host.CompleteFolder(core::Ok(), std::move(folder));
+  const json::Value& patch = host.patches.back();
+  DHEPZ_CHECK(patch.BoolField(L"launch_enabled"));
+  DHEPZ_CHECK(patch.BoolField(L"venv_available"));
+  DHEPZ_CHECK(patch.ObjectField(L"powershell_venv") != nullptr);
+  DHEPZ_CHECK(patch.Find(L"cmd_venv")->is_null());
+  module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, InvalidAndStaleFolderResultsCannotEnableLaunch) {
+  FakeLaunchHost host;
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(host).ok());
+  host.patches.clear();
+  json::Value old_payload;
+  json::Value new_payload;
+  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\old"})", &old_payload).ok());
+  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\new"})", &new_payload).ok());
+  json::Value immediate;
+  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", old_payload, &immediate).ok());
+  const auto old_callback = host.folder_callback;
+  const auto old_token = host.folder_token;
+  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", new_payload, &immediate).ok());
+
+  modules::HostOperationCompletion stale;
+  stale.token = old_token;
+  stale.kind = modules::HostOperationKind::FolderProbe;
+  stale.folder.directory_exists = true;
+  stale.folder.normalized_directory = L"C:\\old";
+  old_callback(stale);
+  DHEPZ_CHECK(host.patches.empty());
+
+  modules::FolderProbeResult missing;
+  host.CompleteFolder(core::Ok(), std::move(missing));
+  DHEPZ_CHECK_FALSE(host.patches.back().BoolField(L"launch_enabled", true));
+  DHEPZ_CHECK_FALSE(host.reported.ok());
+  module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, OnlySuccessfulSpawnPersistsRecentFolder) {
+  FakeLaunchHost host;
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(host).ok());
+  host.patches.clear();
+  json::Value payload;
+  DHEPZ_CHECK(json::Parse(
+      LR"({"shell":"cmd","working_folder":"C:\\work"})", &payload).ok());
+  json::Value immediate;
+  DHEPZ_CHECK(module->Handle(L"terminal:launch", payload, &immediate).ok());
+  host.CompleteProcess(core::Err(core::ErrorCode::Cancelled, L"cancelled"));
+  DHEPZ_CHECK_EQ(host.settings_writes, 0);
+  DHEPZ_CHECK(host.patches.back().Find(L"recent_folders") == nullptr);
+
+  DHEPZ_CHECK(module->Handle(L"terminal:launch", payload, &immediate).ok());
+  host.CompleteProcess(core::Ok());
+  DHEPZ_CHECK_EQ(host.settings_writes, 1);
+  DHEPZ_CHECK_EQ(host.patches.back().ArrayField(L"recent_folders")->size(),
+                 static_cast<std::size_t>(1));
+  module->Release();
+}
+
+DHEPZ_TEST(TerminalModule, ReleaseInvalidatesOutstandingFolderCallback) {
+  FakeLaunchHost host;
+  const auto module = terminal::MakeTerminalForTests();
+  DHEPZ_CHECK(module->Bind(host).ok());
+  host.patches.clear();
+  json::Value payload;
+  DHEPZ_CHECK(json::Parse(LR"({"folder":"C:\\work"})", &payload).ok());
+  json::Value immediate;
+  DHEPZ_CHECK(module->Handle(L"terminal:select-folder", payload, &immediate).ok());
+  const auto callback = host.folder_callback;
+  const auto token = host.folder_token;
+  module->Release();
+  modules::HostOperationCompletion completion;
+  completion.token = token;
+  completion.kind = modules::HostOperationKind::FolderProbe;
+  completion.folder.directory_exists = true;
+  completion.folder.normalized_directory = L"C:\\work";
+  callback(completion);
+  DHEPZ_CHECK(host.patches.empty());
 }

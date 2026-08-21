@@ -21,10 +21,10 @@ class FakeTerminalModule final : public modules::ModuleDescriptor {
   bool ShowInTabs() const override { return true; }
   std::wstring_view SettingsRoute() const override { return {}; }
   std::vector<std::wstring> DeclaredActions() const override {
-    return {L"terminal:launch"};
+    return {L"terminal:launch", L"terminal:select-folder"};
   }
   std::vector<std::wstring> DeclaredBindings() const override {
-    return {L"working_folder", L"wsl_distros", L"wsl_distro", L"admin",
+    return {L"working_folder", L"recent_folders", L"wsl_distros", L"wsl_distro", L"admin",
             L"powershell_venv", L"cmd_venv", L"venv_available",
             L"venv_enabled", L"busy", L"status", L"launch_enabled"};
   }

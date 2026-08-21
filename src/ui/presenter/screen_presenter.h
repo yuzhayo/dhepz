@@ -42,6 +42,7 @@ class ScreenPresenter final {
 
   // VK_TAB / Shift+VK_TAB advance focus; returns true when handled.
   bool HandleKey(int virtual_key);
+  bool HandleText(wchar_t character);
   // Hover and press feedback; true when the visual state changed.
   bool HandleMove(float x, float y);
   bool HandleDown(float x, float y);
@@ -91,6 +92,7 @@ class ScreenPresenter final {
                     std::wstring_view property, bool fallback = false) const;
   void InvalidateBoundNodes(const layout::LayoutNode& node,
                             const std::vector<std::wstring>& changed);
+  bool EditFocusedInput(wchar_t character, bool backspace);
   // The style a text node is measured AND painted with; keeping the two
   // identical is what warms the painted font during layout.
   static render::TextStyle StyleForText(const config::ComponentNode& node);

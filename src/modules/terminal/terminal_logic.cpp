@@ -89,7 +89,8 @@ core::Status ParseLaunchPayload(const json::Value& payload, LaunchSpec* out) {
     out->admin = admin->AsBool();
   }
 
-  bool venv_enabled = true;
+  const json::Value* venv_value = payload.Find(L"venv");
+  bool venv_enabled = venv_value != nullptr && !venv_value->is_null();
   if (const json::Value* enabled = payload.Find(L"venv_enabled");
       enabled != nullptr && !enabled->is_null()) {
     if (!enabled->is_bool()) {
@@ -99,7 +100,7 @@ core::Status ParseLaunchPayload(const json::Value& payload, LaunchSpec* out) {
     venv_enabled = enabled->AsBool();
   }
 
-  if (const json::Value* venv = payload.Find(L"venv");
+  if (const json::Value* venv = venv_value;
       venv != nullptr && !venv->is_null()) {
     if (!venv->is_object()) {
       return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
@@ -122,7 +123,12 @@ core::Status ParseLaunchPayload(const json::Value& payload, LaunchSpec* out) {
     out->venv.kind = kind == L"windows" ? PathKind::Windows : PathKind::Linux;
     out->venv.activate_path = path->AsString();
   }
-  if (!venv_enabled) out->venv = {};
+  if (!venv_enabled) {
+    out->venv = {};
+  } else if (out->venv.kind == PathKind::None) {
+    return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                     L"enabled venv requires a compatible selection");
+  }
   return core::Ok();
 }
 

@@ -8,7 +8,9 @@
       "show_in_tabs": true,
       "children": [
         { "type": "text", "text": "Terminal", "variant": "title" },
-        { "type": "input", "value_binding": "working_folder", "placeholder": "Working folder (available in IC-09)" },
+        { "type": "input", "id": "working-folder", "value_binding": "working_folder", "placeholder": "Working folder" },
+        { "type": "button", "id": "validate-folder", "label": "Validate folder", "action": "terminal:select-folder", "action_payload": { "folder": { "$bind": "working_folder" } } },
+        { "type": "combo", "items_binding": "recent_folders", "selected_value_binding": "working_folder", "placeholder": "Recent folders" },
         { "type": "toggle", "id": "admin-toggle", "label": "Run as administrator", "checked_binding": "admin" },
         { "type": "toggle", "id": "venv-toggle", "label": "Use virtual environment", "checked_binding": "venv_enabled", "visible": { "$bind": "venv_available" } },
         { "type": "combo", "items_binding": "wsl_distros", "selected_value_binding": "wsl_distro", "placeholder": "WSL distro (populated in IC-11)" },
