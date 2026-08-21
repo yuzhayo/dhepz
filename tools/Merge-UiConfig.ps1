@@ -35,6 +35,7 @@ if ($GenerateEmbedded) {
     # it before the exe exists; full schema validation runs at test time and
     # at the gate.
     $components = New-Object System.Collections.ArrayList
+    $manifests = New-Object System.Collections.ArrayList
     $screensRoot = Join-Path $RepositoryRoot 'assets\ui\screens'
     if (Test-Path -LiteralPath $screensRoot -PathType Container) {
         foreach ($file in @(Get-ChildItem -LiteralPath $screensRoot -Filter *.json | Sort-Object Name)) {
@@ -59,9 +60,12 @@ if ($GenerateEmbedded) {
             }
             $doc = Get-Content -LiteralPath $screenPath -Raw | ConvertFrom-Json
             foreach ($component in $doc.components) { $null = $components.Add($component) }
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $null = $manifests.Add($manifest)
         }
     }
-    $merged = [ordered]@{ components = $components }
+    $core = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'assets\ui\core.json') -Raw | ConvertFrom-Json
+    $merged = [ordered]@{ core = $core; components = $components; modules = $manifests }
     $outDir = Join-Path $RepositoryRoot 'build\generated'
     $null = New-Item -ItemType Directory -Force -Path $outDir
     $json = ($merged | ConvertTo-Json -Depth 32) + "`n"
