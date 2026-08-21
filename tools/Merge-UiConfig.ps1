@@ -107,10 +107,9 @@ if (-not (Test-Path -LiteralPath $exe)) {
     throw "dhepz.exe not found for $Configuration — build first: $exe"
 }
 $core = Join-Path $RepositoryRoot 'assets\ui\core.json'
-$screens = Join-Path $RepositoryRoot 'assets\ui\screens'
 
 # GUI-subsystem exe: $LASTEXITCODE is never set for it, so wait explicitly.
-$process = Start-Process -FilePath $exe -ArgumentList '--validate-ui', $core, $screens -Wait -PassThru -NoNewWindow
+$process = Start-Process -FilePath $exe -ArgumentList '--validate-embedded' -Wait -PassThru -NoNewWindow
 if ($process.ExitCode -ne 0) {
     exit 1
 }
