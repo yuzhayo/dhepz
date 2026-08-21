@@ -16,6 +16,8 @@ param(
 
     [switch] $SelfTest,
 
+    [switch] $GenerateEmbedded,
+
     [string] $RepositoryRoot
 )
 
@@ -26,6 +28,47 @@ if (-not $PSBoundParameters.ContainsKey('RepositoryRoot')) {
     $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 }
 $RepositoryRoot = [System.IO.Path]::GetFullPath($RepositoryRoot)
+
+if ($GenerateEmbedded) {
+    # Build-time UI half (plan Part 3, scan stage 1): one embedded document,
+    # no filesystem walk at startup. PowerShell-only so a clean build can run
+    # it before the exe exists; full schema validation runs at test time and
+    # at the gate.
+    $components = New-Object System.Collections.ArrayList
+    $screensRoot = Join-Path $RepositoryRoot 'assets\ui\screens'
+    if (Test-Path -LiteralPath $screensRoot -PathType Container) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $screensRoot -Filter *.json | Sort-Object Name)) {
+            $doc = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+            foreach ($component in $doc.components) { $null = $components.Add($component) }
+        }
+    }
+    $modulesRoot = Join-Path $RepositoryRoot 'src\modules'
+    if (Test-Path -LiteralPath $modulesRoot -PathType Container) {
+        foreach ($dir in @(Get-ChildItem -LiteralPath $modulesRoot -Directory | Sort-Object Name)) {
+            $manifestPath = Join-Path $dir.FullName 'module.json'
+            $screenPath = Join-Path $dir.FullName 'screen.json'
+            $hasManifest = Test-Path -LiteralPath $manifestPath
+            $hasScreen = Test-Path -LiteralPath $screenPath
+            # Code-only folders (the contract, the registry) are not modules.
+            if (-not $hasManifest -and -not $hasScreen) { continue }
+            if (-not $hasManifest) {
+                throw "Module folder '$($dir.Name)' has no module.json — skipped folders are only tolerated at runtime, never in src\modules at build time."
+            }
+            if (-not $hasScreen) {
+                throw "Module '$($dir.Name)' has no screen.json."
+            }
+            $doc = Get-Content -LiteralPath $screenPath -Raw | ConvertFrom-Json
+            foreach ($component in $doc.components) { $null = $components.Add($component) }
+        }
+    }
+    $merged = [ordered]@{ components = $components }
+    $outDir = Join-Path $RepositoryRoot 'build\generated'
+    $null = New-Item -ItemType Directory -Force -Path $outDir
+    $json = ($merged | ConvertTo-Json -Depth 32) + "`n"
+    [System.IO.File]::WriteAllText((Join-Path $outDir 'embedded_ui.json'), $json, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "Embedded UI document written ($($components.Count) components)."
+    exit 0
+}
 
 $exe = Join-Path $RepositoryRoot "build\x64\$Configuration\dhepz.exe"
 if (-not (Test-Path -LiteralPath $exe)) {

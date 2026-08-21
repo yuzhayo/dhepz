@@ -72,6 +72,15 @@
                       Lines="// Generated from version.props by the GenerateVersionHeader target.;// Do not edit and do not commit.;#pragma once;#define DHEPZ_VERSION_STRING &quot;$(DhepzVersion)&quot;;#define DHEPZ_VERSION_STRING_W L&quot;$(DhepzVersion)&quot;;#define DHEPZ_FILE_VERSION_STRING &quot;$(DhepzVersion).$(DhepzVersionBuild)&quot;" />
   </Target>
 
+  <!-- Build-time UI half (plan Part 3, scan stage 1): merge the embedded
+       screens plus every module's screen.json into one document and embed
+       it as RCDATA. PowerShell-only so it runs before the exe exists; a
+       malformed screen fails the build here, not the user's app. -->
+  <Target Name="GenerateEmbeddedUi"
+          BeforeTargets="ResourceCompile">
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass &quot;$(ProjectDir)..\\tools\\Merge-UiConfig.ps1&quot; -GenerateEmbedded -RepositoryRoot &quot;$(ProjectDir)..&quot;" />
+  </Target>
+
   <ItemDefinitionGroup>
     <ClCompile>
       <LanguageStandard>stdcpp20</LanguageStandard>

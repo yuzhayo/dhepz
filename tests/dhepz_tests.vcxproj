@@ -129,6 +129,7 @@
     <ClCompile Include="..\src\ui\shell\**\*.cpp" />
     <ClCompile Include="..\src\ui\theme\**\*.cpp" />
     <ClCompile Include="..\src\modules\contract\**\*.cpp" />
+    <ClCompile Include="..\src\modules\registry\**\*.cpp" />
     <ClInclude Include="**\*.h" />
     <ResourceCompile Include="app_icon.rc" />
   </ItemGroup>
