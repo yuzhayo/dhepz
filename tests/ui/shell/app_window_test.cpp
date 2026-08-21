@@ -143,14 +143,16 @@ DHEPZ_TEST(AppWindow, HitTestMapsFrameZones) {
   DHEPZ_CHECK(window.Create(TestInstance()));
   window.Show();
 
-  // Window is 1008x688 physical at 96 DPI: 24 px shadow margin around a
-  // 960x640 content area; caption is the top 40 px of the content.
+  RECT client{};
+  GetClientRect(static_cast<HWND>(window.hwnd()), &client);
+  // The compact default still keeps the same shadow, resize, caption, and
+  // caption-button zones.
   DHEPZ_CHECK_EQ(window.HitTest(5, 300), HTTRANSPARENT);    // shadow margin
   DHEPZ_CHECK_EQ(window.HitTest(26, 300), HTLEFT);          // left resize border
-  DHEPZ_CHECK_EQ(window.HitTest(500, 26), HTTOP);           // top resize border
+  DHEPZ_CHECK_EQ(window.HitTest(client.right / 2, 26), HTTOP);  // top resize border
   DHEPZ_CHECK_EQ(window.HitTest(100, 40), HTCAPTION);       // caption: drag
-  DHEPZ_CHECK_EQ(window.HitTest(500, 300), HTCLIENT);       // content
-  DHEPZ_CHECK_EQ(window.HitTest(970, 40), HTCLIENT);        // close button area
+  DHEPZ_CHECK_EQ(window.HitTest(client.right / 2, 300), HTCLIENT);  // content
+  DHEPZ_CHECK_EQ(window.HitTest(client.right - 38, 40), HTCLIENT);  // close button
 }
 
 DHEPZ_TEST(AppWindow, FontsSurviveWindowCloseThroughTheSharedCache) {
@@ -295,28 +297,38 @@ DHEPZ_TEST(AppWindow, PinTogglesDoNotGrowHandles) {
 
 DHEPZ_TEST(AppWindow, SettingsButtonAppearsOnlyWithHandler) {
   shell::AppWindow window;
-  DHEPZ_CHECK(window.Create(TestInstance()));  // 960x640 content -> 1008x688
+  DHEPZ_CHECK(window.Create(TestInstance()));
   window.Show();
   PumpFor(30);
   const HWND hwnd = static_cast<HWND>(window.hwnd());
 
-  // Client geometry at 96 DPI: margin 24, content_right 984, button 46 px.
-  // Left-to-right: pin, [settings], close.
+  RECT client{};
+  GetClientRect(hwnd, &client);
+  const int dpi = static_cast<int>(GetDpiForWindow(hwnd));
+  const int margin = MulDiv(24, dpi, 96);
+  const int button_width = MulDiv(46, dpi, 96);
+  const int content_right = client.right - margin;
+  const int caption_y = margin + MulDiv(20, dpi, 96);
   bool opened = false;
-  // No handler: two buttons; the pin occupies x 892..938 and there is no
-  // gear — its future slot is plain caption, clicking it does nothing.
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(700, 40));
+  // Without a handler there are two buttons: pin, close.
+  SendMessageW(hwnd, WM_LBUTTONUP, 0,
+               MAKELPARAM(content_right - button_width * 3, caption_y));
   DHEPZ_CHECK_FALSE(opened);
   DHEPZ_CHECK_FALSE(window.pinned());
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(900, 40));
+  const int pin_without_settings = content_right - button_width * 3 / 2;
+  SendMessageW(hwnd, WM_LBUTTONUP, 0,
+               MAKELPARAM(pin_without_settings, caption_y));
   DHEPZ_CHECK(window.pinned());
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(900, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0,
+               MAKELPARAM(pin_without_settings, caption_y));
   DHEPZ_CHECK_FALSE(window.pinned());
 
   window.set_settings_handler([&opened] { opened = true; });
-  // The gear now takes x 892..938 and the pin shifts left to 846..892.
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(910, 40));
+  const int settings = content_right - button_width * 3 / 2;
+  const int pin_with_settings = content_right - button_width * 5 / 2;
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(settings, caption_y));
   DHEPZ_CHECK(opened);
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(860, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0,
+               MAKELPARAM(pin_with_settings, caption_y));
   DHEPZ_CHECK(window.pinned());
 }

@@ -9,6 +9,7 @@
 #include "framework/test_case.h"
 #include "modules/gate/app_gate.h"
 #include "modules/registry/module_registry.h"
+#include "modules/terminal/terminal_module.h"
 #include "ui/presenter/screen_presenter.h"
 #include "ui/shell/app_window.h"
 
@@ -18,16 +19,16 @@ class FakeTerminalModule final : public modules::ModuleDescriptor {
   std::wstring_view ModuleId() const override { return L"terminal"; }
   std::wstring_view TabLabel() const override { return L"Terminal"; }
   int Order() const override { return 10; }
-  bool ShowInTabs() const override { return true; }
+  bool ShowInTabs() const override { return false; }
   std::wstring_view SettingsRoute() const override { return {}; }
   std::vector<std::wstring> DeclaredActions() const override {
-    return {L"terminal:launch", L"terminal:select-folder",
+    return {L"terminal:launch", L"terminal:browse-folder",
             L"terminal:refresh-wsl"};
   }
   std::vector<std::wstring> DeclaredBindings() const override {
-    return {L"working_folder", L"recent_folders", L"wsl_distros", L"wsl_distro", L"admin",
-            L"powershell_venv", L"cmd_venv", L"venv_available",
-            L"venv_enabled", L"busy", L"status", L"launch_enabled"};
+    return {L"working_folder", L"recent_folders", L"wsl_distros",
+            L"wsl_distro", L"venv_enabled", L"busy", L"status",
+            L"launch_enabled"};
   }
   std::vector<std::wstring> DeclaredCapabilities() const override { return {}; }
   core::Status Bind(modules::ModuleHost&) override { return core::Ok(); }
@@ -46,6 +47,15 @@ std::unique_ptr<modules::ModuleDescriptor> MakeFakeTerminal() {
   return std::make_unique<FakeTerminalModule>();
 }
 
+class ScopedTerminalRegistration final {
+ public:
+  explicit ScopedTerminalRegistration(modules::ModuleFactory factory) {
+    modules::ResetRegistryForTests();
+    modules::RegisterModule(L"terminal", factory);
+  }
+  ~ScopedTerminalRegistration() { modules::ResetRegistryForTests(); }
+};
+
 void PumpFor(int milliseconds) {
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(milliseconds);
@@ -61,13 +71,14 @@ void PumpFor(int milliseconds) {
 }  // namespace
 
 DHEPZ_TEST(ProductionApplication, NormalLaunchComposesAndShowsEmbeddedJsonUi) {
+  ScopedTerminalRegistration registration(&terminal::MakeTerminalForTests);
   application::ProductionApplication app;
   const core::Status start = app.Start(GetModuleHandleW(nullptr), false);
   DHEPZ_CHECK_EQ(start.Message(), std::wstring());
   DHEPZ_CHECK(app.gate() != nullptr);
   DHEPZ_CHECK(app.gate()->document() != nullptr);
   DHEPZ_CHECK(app.presenter() != nullptr);
-  DHEPZ_CHECK_EQ(app.presenter()->current_route(), std::wstring(L"home"));
+  DHEPZ_CHECK_EQ(app.presenter()->current_route(), std::wstring(L"terminal"));
   DHEPZ_CHECK(app.window() != nullptr);
   DHEPZ_CHECK(app.window()->visible());
   DHEPZ_CHECK(app.window()->backend()->buffer_width() > 0);
@@ -76,6 +87,7 @@ DHEPZ_TEST(ProductionApplication, NormalLaunchComposesAndShowsEmbeddedJsonUi) {
 }
 
 DHEPZ_TEST(ProductionApplication, TrayOnlyDefersUiUntilTrayActivation) {
+  ScopedTerminalRegistration registration(&terminal::MakeTerminalForTests);
   application::ProductionApplication app;
   const core::Status start = app.Start(GetModuleHandleW(nullptr), true);
   DHEPZ_CHECK_EQ(start.Message(), std::wstring());
@@ -95,6 +107,7 @@ DHEPZ_TEST(ProductionApplication, TrayOnlyDefersUiUntilTrayActivation) {
 }
 
 DHEPZ_TEST(ProductionApplication, CloseReleasesAndNextShowRebuildsCompleteFrame) {
+  ScopedTerminalRegistration registration(&terminal::MakeTerminalForTests);
   application::ProductionApplication app;
   const core::Status start = app.Start(GetModuleHandleW(nullptr), false);
   DHEPZ_CHECK_EQ(start.Message(), std::wstring());
@@ -117,8 +130,7 @@ DHEPZ_TEST(ProductionApplication, CloseReleasesAndNextShowRebuildsCompleteFrame)
 }
 
 DHEPZ_TEST(ProductionApplication, TerminalJsonActionReachesGateStatusPath) {
-  modules::ResetRegistryForTests();
-  modules::RegisterModule(L"terminal", &MakeFakeTerminal);
+  ScopedTerminalRegistration registration(&MakeFakeTerminal);
   application::ProductionApplication app;
   const core::Status start = app.Start(GetModuleHandleW(nullptr), false);
   DHEPZ_CHECK_EQ(start.Message(), std::wstring());
@@ -138,5 +150,4 @@ DHEPZ_TEST(ProductionApplication, TerminalJsonActionReachesGateStatusPath) {
   DHEPZ_CHECK_FALSE(app.gate()->Diagnostics().statuses[0].ok);
   DHEPZ_CHECK(app.window()->visible());
   app.Shutdown();
-  modules::ResetRegistryForTests();
 }

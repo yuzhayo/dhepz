@@ -334,7 +334,7 @@ DHEPZ_TEST(TerminalModule, UsesHostRequestAndPublishesCancelledCompletion) {
   host.CompleteProcess(
       core::Err(core::ErrorCode::Cancelled, L"UAC was cancelled"));
   DHEPZ_CHECK(host.reported.Code() == core::ErrorCode::Cancelled);
-  DHEPZ_CHECK_EQ(host.patches.size(), static_cast<std::size_t>(2));
+  DHEPZ_CHECK_EQ(host.patches.size(), static_cast<std::size_t>(3));
   DHEPZ_CHECK_FALSE(host.patches.back().BoolField(L"busy"));
   DHEPZ_CHECK_CONTAINS(host.patches.back().StringField(L"status"),
                        std::wstring(L"UAC"));

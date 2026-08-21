@@ -1,5 +1,7 @@
 #include <windows.h>
 
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -39,16 +41,28 @@ DHEPZ_TEST(RepoUiConfig, EmbeddedScreensResolveClean) {
                               &core)
                   .ok());
 
+  std::vector<std::filesystem::path> paths;
+  for (const auto& entry : std::filesystem::directory_iterator(
+           std::filesystem::path(root) / L"assets" / L"ui" / L"screens")) {
+    if (entry.is_regular_file() && entry.path().extension() == L".json") {
+      paths.push_back(entry.path());
+    }
+  }
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(
+           std::filesystem::path(root) / L"src" / L"modules")) {
+    if (entry.is_regular_file() && entry.path().filename() == L"screen.json") {
+      paths.push_back(entry.path());
+    }
+  }
+  std::sort(paths.begin(), paths.end());
+
   std::vector<ui::config::ScreenSource> sources;
-  WIN32_FIND_DATAW entry{};
-  const HANDLE find = FindFirstFileW((root + L"\\assets\\ui\\screens\\*.json").c_str(), &entry);
-  DHEPZ_CHECK(find != INVALID_HANDLE_VALUE);
-  do {
-    const std::wstring name(entry.cFileName);
-    const std::string text = ReadFile(root + L"\\assets\\ui\\screens\\" + name);
-    sources.push_back({name, std::wstring(text.begin(), text.end())});
-  } while (FindNextFileW(find, &entry) != 0);
-  FindClose(find);
+  for (const std::filesystem::path& path : paths) {
+    const std::string text = ReadFile(path.wstring());
+    sources.push_back(
+        {path.lexically_relative(root).wstring(),
+         std::wstring(text.begin(), text.end())});
+  }
 
   std::vector<ui::config::Diagnostic> diagnostics;
   std::unique_ptr<ui::config::ResolvedUiDocument> document;
@@ -57,5 +71,5 @@ DHEPZ_TEST(RepoUiConfig, EmbeddedScreensResolveClean) {
     OutputDebugStringW((diagnostic.message + L"\n").c_str());
   }
   DHEPZ_CHECK(status.ok());
-  DHEPZ_CHECK(document->FindRoute(L"home") != nullptr);
+  DHEPZ_CHECK(document->FindRoute(L"terminal") != nullptr);
 }
