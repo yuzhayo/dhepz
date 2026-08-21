@@ -1,0 +1,9 @@
+{
+  "moduleId": "terminal",
+  "tabLabel": "Terminal",
+  "order": 10,
+  "showInTabs": true,
+  "actions": ["terminal:launch"],
+  "bindings": [],
+  "capabilities": []
+}

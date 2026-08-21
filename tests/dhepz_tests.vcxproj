@@ -132,6 +132,7 @@
     <ClCompile Include="..\src\modules\registry\**\*.cpp" />
     <ClCompile Include="..\src\modules\gate\**\*.cpp" />
     <ClCompile Include="..\src\modules\diagnostics\**\*.cpp" />
+    <ClCompile Include="..\src\modules\terminal\**\*.cpp" />
     <ClInclude Include="**\*.h" />
     <ResourceCompile Include="app_icon.rc" />
   </ItemGroup>

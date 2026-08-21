@@ -1,0 +1,15 @@
+{
+  "components": [
+    {
+      "type": "screen",
+      "route_id": "terminal",
+      "module_id": "terminal",
+      "tab_label": "Terminal",
+      "show_in_tabs": true,
+      "children": [
+        { "type": "text", "text": "Terminal", "variant": "title" },
+        { "type": "button", "label": "Open PowerShell" }
+      ]
+    }
+  ]
+}
