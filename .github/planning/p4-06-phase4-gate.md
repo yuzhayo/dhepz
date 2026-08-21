@@ -9,6 +9,7 @@ Acceptance criteria (gate)
 - WSL distro enumeration is cached and refreshable; adding a distro is visible after refresh.
 - The terminal module touches only its own folder; adding or deleting the folder appears/disappears without editing other files.
 - CI asserts the gate (integration tests + instrumentation).
+- New-Module.ps1 is finalised from what the terminal module actually needed (plan Part: Phase 4); any scaffold gap found while building P4-01..P4-05 is fixed here.
 
 Verification
 - Integration tests and CI-run instrumentation demonstrate warm-start budgets and worker-offload behavior.

@@ -7,7 +7,7 @@ Scope
 
 Acceptance criteria
 - The scaffolded module compiles and is discovered by the ModuleRegistry without editing central files.
-- module.json is valid and declares the capabilities it needs (process:launch, settings:own) and no global reach.
+- module.json is valid and declares NO capabilities: process launch and own-section settings are the default ModuleHost reach, and the capability set is closed per ADR 0001 (only settings:all and config:write exist). Any declared capability beyond those is a contract violation the gate rejects.
 - The module folder is self-contained: all code, assets, and manifest live inside it.
 
 Verification

@@ -2,6 +2,7 @@ P4-02 Process launch and RunCapture for shells
 
 Scope
 - Implement robust process launch helpers and RunCapture used by the terminal module for launching PowerShell, Admin elevation, and other shells.
+- Launches open EXTERNAL console windows (the old build's model; no in-app conpty — that is scope drift). Admin elevation uses the runas verb in a separate elevated window, per the plan's "elevation per-action" note.
 - Ensure process output capture is deadlock-free, bounded, deadline-aware, and offloaded to a worker when blocking.
 - Add strict command-line building using str::QuoteArg and safe argument passing.
 
