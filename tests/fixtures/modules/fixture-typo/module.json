@@ -1,9 +1,0 @@
-{
-  "moduleId": "fixture-typo",
-  "tabLabel": "Fixture Typo",
-  "order": 501,
-  "showInTabs": false,
-  "actions": ["fixture-launch"],
-  "bindings": [],
-  "capabilities": []
-}

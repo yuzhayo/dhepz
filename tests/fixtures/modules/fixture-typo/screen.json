@@ -1,7 +1,0 @@
-{
-  "components": [
-    { "type": "screen", "route_id": "fixture-typo", "module_id": "fixture-typo",
-      "tab_label": "Fixture Typo", "show_in_tabs": false,
-      "children": [ { "type": "text", "text": "typo" } ] }
-  ]
-}

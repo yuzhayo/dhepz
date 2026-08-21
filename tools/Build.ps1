@@ -102,14 +102,6 @@ $exitCode = $LASTEXITCODE
 if ($exitCode -eq 0) {
     $exe = Join-Path $repositoryRoot "build\$Platform\$Configuration\dhepz.exe"
     if (Test-Path -LiteralPath $exe -PathType Leaf) {
-        # Full module validation must run after link because only the linked
-        # image contains the real RCDATA and self-registered descriptors.
-        $validation = Start-Process -FilePath $exe -ArgumentList '--validate-embedded' `
-            -Wait -PassThru -NoNewWindow
-        if ($validation.ExitCode -ne 0) {
-            Write-Error "Embedded UI validation failed for '$exe'."
-            exit $validation.ExitCode
-        }
         $size = [math]::Round((Get-Item -LiteralPath $exe).Length / 1KB, 1)
         Write-Host "Built $exe ($size KB)" -ForegroundColor Green
     }

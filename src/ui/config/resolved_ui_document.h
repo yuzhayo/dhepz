@@ -46,7 +46,6 @@ class ComponentNode {
   const std::wstring& id() const { return id_; }
 
   bool Has(std::wstring_view name) const;
-  const json::Value* Property(std::wstring_view name) const;
   std::wstring GetString(std::wstring_view name, std::wstring_view fallback = {}) const;
   long long GetInt(std::wstring_view name, long long fallback = 0) const;
   bool GetBool(std::wstring_view name, bool fallback = false) const;

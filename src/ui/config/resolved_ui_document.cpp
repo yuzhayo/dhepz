@@ -103,13 +103,6 @@ bool ComponentNode::Has(std::wstring_view name) const {
          }) != properties_.end();
 }
 
-const json::Value* ComponentNode::Property(std::wstring_view name) const {
-  for (const auto& [key, value] : properties_) {
-    if (key == name) return &value;
-  }
-  return nullptr;
-}
-
 std::wstring ComponentNode::GetString(std::wstring_view name,
                                       std::wstring_view fallback) const {
   for (const auto& [key, value] : properties_) {

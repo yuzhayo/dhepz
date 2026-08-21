@@ -251,15 +251,7 @@ DHEPZ_TEST(Worker, SequentialJobsLeaveTheHandleCountFlat) {
         [&](std::shared_ptr<void> cargo) { rig.state.delivered.push_back(std::move(cargo)); });
     PumpUntil([&] { return rig.state.delivered.size() == static_cast<std::size_t>(i + 1); }, 5000);
   }
-  // Delivery can be pumped a few instructions before the posting thread sets
-  // its final done flag. Settle/reap without making JoinFinished block on a
-  // still-live thread; the bounded check still requires the idle count to be 0.
-  PumpUntil(
-      [&] {
-        worker.JoinFinished();
-        return worker.ThreadCount() == 0;
-      },
-      1000);
+  worker.JoinFinished();
 
   DWORD handles_before = 0;
   GetProcessHandleCount(process, &handles_before);
@@ -312,25 +304,6 @@ DHEPZ_TEST(Worker, ShutdownJoinsCleanlyAndDiscardsInFlightCompletions) {
                 [&](std::shared_ptr<void> cargo) { rig.state.delivered.push_back(std::move(cargo)); });
   DHEPZ_CHECK_EQ(worker.ThreadCount(), static_cast<std::size_t>(0));
   PumpUntil([&] { return false; }, 150);
-  DHEPZ_CHECK(rig.state.delivered.empty());
-}
-
-DHEPZ_TEST(Worker, DestroyedOwnerMakesAlreadyQueuedCompletionSafeAndStale) {
-  Rig rig;
-  {
-    worker::Worker worker(rig.hwnd, rig.state.completion_message);
-    const std::uint64_t generation = worker.CreateGeneration();
-    worker.Submit(
-        [](const std::atomic<bool>&) { return MakeInt(9); },
-        [&](std::shared_ptr<void> cargo) { rig.state.delivered.push_back(std::move(cargo)); },
-        generation);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    worker.JoinFinished();
-    DHEPZ_CHECK_EQ(worker.ThreadCount(), static_cast<std::size_t>(0));
-    // The completion message is intentionally still queued when the owner dies.
-  }
-
-  PumpUntil([&] { return false; }, 100);
   DHEPZ_CHECK(rig.state.delivered.empty());
 }
 

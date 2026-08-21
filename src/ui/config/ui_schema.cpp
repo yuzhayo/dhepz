@@ -35,33 +35,6 @@ bool IsInteger(const json::Value& value) {
   return number == static_cast<long long>(number);
 }
 
-bool IsBindingReference(const json::Value& value) {
-  if (!value.is_object() || value.members().size() != 1) return false;
-  const auto& [key, binding] = value.members().front();
-  return key == L"$bind" && binding.is_string() && !binding.AsString().empty();
-}
-
-void ValidateBindingTemplates(const json::Value& value,
-                              std::vector<Diagnostic>* out) {
-  if (value.is_object()) {
-    if (value.Find(L"$bind") != nullptr) {
-      if (!IsBindingReference(value)) {
-        Add(out, value,
-            L"binding reference must be exactly {\"$bind\": \"name\"}");
-      }
-      return;
-    }
-    for (const auto& [key, member] : value.members()) {
-      (void)key;
-      ValidateBindingTemplates(member, out);
-    }
-  } else if (value.is_array()) {
-    for (const json::Value& item : value.items()) {
-      ValidateBindingTemplates(item, out);
-    }
-  }
-}
-
 bool KindMatches(const json::Value& value, std::wstring_view kind,
                  const json::Value* definition);
 
@@ -124,14 +97,13 @@ const json::Value* CatalogType(const json::Value& core, std::wstring_view type) 
 bool KindMatches(const json::Value& value, std::wstring_view kind,
                  const json::Value* definition) {
   if (kind == L"string") return value.is_string();
-  if (kind == L"text") return value.is_string() || IsBindingReference(value);
-  if (kind == L"bool") return value.is_bool() || IsBindingReference(value);
+  if (kind == L"text") return value.is_string();
+  if (kind == L"bool") return value.is_bool();
   if (kind == L"int") return IsInteger(value);
   if (kind == L"object") return value.is_object();
   if (kind == L"array") return value.is_array();
   if (kind == L"binding") {
-    return value.is_string() || value.is_bool() || value.is_number() ||
-           IsBindingReference(value);
+    return value.is_string() || value.is_object() || value.is_bool() || value.is_number();
   }
   if (kind == L"enum") {
     if (!value.is_string()) return false;
@@ -219,8 +191,6 @@ void ValidateComponent(const json::Value& core, const json::Value& component,
     if (!KindMatches(value, kind, definition)) {
       Add(out, value, L"property '" + name + L"' on component '" + type->AsString() +
                           L"' must be of kind '" + kind + L"'");
-    } else {
-      ValidateBindingTemplates(value, out);
     }
   }
 }

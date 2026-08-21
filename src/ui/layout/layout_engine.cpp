@@ -40,22 +40,19 @@ bool IsContainerLike(const std::wstring& type) {
 }  // namespace
 
 render::Size LayoutEngine::MeasureText(const config::ComponentNode& node,
-                                       std::wstring_view text,
-                                       const render::TextStyle* style) {
+                                       std::wstring_view text) {
   for (const auto& [memo_node, size] : memo_) {
     if (memo_node == &node) return size;
   }
   ++measure_calls_;
-  const render::TextStyle fallback{};
-  const render::Size size =
-      backend_->MeasureText(text, style != nullptr ? *style : fallback, 0.0f);
+  render::TextStyle style;
+  const std::wstring variant = node.GetString(L"variant");
+  if (variant == L"monospace") {
+    style.family = L"Cascadia Mono";
+  }
+  const render::Size size = backend_->MeasureText(text, style, 0.0f);
   memo_.emplace_back(&node, size);
   return size;
-}
-
-void LayoutEngine::set_text_style_provider(
-    std::function<render::TextStyle(const config::ComponentNode&)> provider) {
-  text_style_provider_ = std::move(provider);
 }
 
 LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::Rect& available,
@@ -66,39 +63,16 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node, const render::
   const std::wstring& type = node.type();
 
   if (type == L"text") {
-    const render::TextStyle style =
-        text_style_provider_ ? text_style_provider_(node) : render::TextStyle{};
-    const json::Value* text_value = Property(node, L"text");
-    const bool dynamic_text = text_value != nullptr && !text_value->is_string();
-    const render::Size size = MeasureText(
-        node, dynamic_text ? std::wstring_view(L"M")
-                           : std::wstring_view(node.GetString(L"text")),
-        &style);
-    out.bounds.width = dynamic_text ? available.width
-                                    : std::min(size.width, available.width);
+    const render::Size size = MeasureText(node, node.GetString(L"text"));
+    out.bounds.width = std::min(size.width, available.width);
     out.bounds.height = size.height;
     return out;
   }
 
   if (type == L"button") {
-    const json::Value* label = Property(node, L"label");
-    const render::Size size = MeasureText(
-        node, label != nullptr && !label->is_string()
-                  ? std::wstring_view(L"Button")
-                  : std::wstring_view(node.GetString(L"label")));
+    const render::Size size = MeasureText(node, node.GetString(L"label"));
     out.bounds.width = std::min(size.width + 16.0f, available.width);
     out.bounds.height = std::max(size.height + 8.0f, 24.0f);
-    return out;
-  }
-
-  if (type == L"input" || type == L"combo" || type == L"checkbox" ||
-      type == L"toggle") {
-    const std::wstring text = node.GetString(
-        L"label", node.GetString(L"placeholder", type));
-    const render::Size size = MeasureText(node, text);
-    out.bounds.width = std::min(std::max(size.width + 24.0f, 160.0f),
-                                available.width);
-    out.bounds.height = std::max(size.height + 10.0f, 30.0f);
     return out;
   }
 

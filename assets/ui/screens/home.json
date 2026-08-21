@@ -1,14 +1,9 @@
 {
   "components": [
     {
-      "type": "window",
-      "title": "dhepz",
-      "initial_route": "home"
-    },
-    {
       "type": "screen",
       "route_id": "home",
-      "tab_label": "Open terminal",
+      "tab_label": "Home",
       "show_in_tabs": true,
       "children": [
         {
@@ -17,6 +12,7 @@
           "gap": 12,
           "padding": { "left": 24, "top": 24, "right": 24, "bottom": 24 },
           "children": [
+            { "type": "text", "text": "dhepz", "variant": "title" },
             { "type": "button", "label": "Open terminal" }
           ]
         }
