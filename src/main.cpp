@@ -1,30 +1,22 @@
 #include <windows.h>
-#include <shellapi.h>
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "app_version.h"
-#include "core/json.h"
-#include "platform/files.h"
 #include "platform/performance_trace.h"
 #include "platform/tray_process.h"
-#include "ui/config/resolved_ui_document.h"
 #include "ui/shell/app_window/app_window.h"
 
-// Phase 0's tray-resident process: one hidden infrastructure window and one
-// tray icon, no UI, no config, no modules. This is the thing whose idle
-// cost gets measured (#13), so it stays genuinely minimal: exactly one
-// thread, a message loop that blocks in GetMessageW, and nothing that wakes
-// when nothing changed.
+// P1-P2 composition root: one tray-resident owner process and one or more
+// empty AppWindow chrome containers. UI routing and feature logic arrive in
+// later phases. The single UI thread blocks in GetMessageW while idle.
 //
 // wWinMain rather than main: SubSystem is Windows, so there is no console
 // window to flash on launch. That matters for the ~400 ms cold-start budget
-// and for the silent --tray path.
+// and for resident tray activation.
 namespace {
 
 // Distinct numeric exit codes for every bootstrap failure, each with a
@@ -33,58 +25,6 @@ namespace {
 [[noreturn]] void BootstrapFailed(unsigned int code, const wchar_t* what) {
   MessageBoxW(nullptr, what, L"dhepz", MB_OK | MB_ICONERROR);
   ExitProcess(code);
-}
-
-// Build-time validation (#57): resolve the core catalog plus every screen
-// in `screens_dir` and print file(line,column) diagnostics. Console output
-// works because CI and the tools invoke us from a shell that owns a console.
-int RunValidateUi(const std::wstring& core_path, const std::wstring& screens_dir) {
-  std::wstring core_text;
-  if (!files::ReadText(core_path, &core_text).ok()) {
-    std::wprintf(L"cannot read %ls\n", core_path.c_str());
-    return 1;
-  }
-  json::Value core;
-  if (!json::Parse(core_text, &core).ok()) {
-    std::wprintf(L"%ls: core catalog does not parse\n", core_path.c_str());
-    return 1;
-  }
-
-  std::vector<std::wstring> names;
-  WIN32_FIND_DATAW entry{};
-  const HANDLE find = FindFirstFileW((screens_dir + L"\\*.json").c_str(), &entry);
-  if (find != INVALID_HANDLE_VALUE) {
-    do {
-      names.push_back(entry.cFileName);
-    } while (FindNextFileW(find, &entry) != 0);
-    FindClose(find);
-  }
-  std::sort(names.begin(), names.end());
-
-  std::vector<ui::config::ScreenSource> sources;
-  for (const std::wstring& name : names) {
-    std::wstring text;
-    if (!files::ReadText(screens_dir + L"\\" + name, &text).ok()) {
-      std::wprintf(L"%ls(1,1): cannot read screen file\n", name.c_str());
-      return 1;
-    }
-    sources.push_back({name, std::move(text)});
-  }
-
-  std::vector<ui::config::Diagnostic> diagnostics;
-  std::unique_ptr<ui::config::ResolvedUiDocument> document;
-  const core::Status status =
-      ui::config::ResolveDocument(core, sources, &diagnostics, &document);
-  for (const ui::config::Diagnostic& diagnostic : diagnostics) {
-    std::wprintf(L"%ls(%d,%d): %ls\n", screens_dir.c_str(), diagnostic.line, diagnostic.column,
-                 diagnostic.message.c_str());
-  }
-  if (!status.ok()) {
-    std::wprintf(L"UI config invalid: %zu diagnostic(s)\n", diagnostics.size());
-    return 1;
-  }
-  std::wprintf(L"UI config ok: %zu route(s)\n", document->routes().size());
-  return 0;
 }
 
 }  // namespace
@@ -100,25 +40,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   static_assert(dhepz::version::kMajor >= 0,
                 "version.props must reach the compiler as defines");
 
-  // Tooling path (#57): validate the UI config and exit, no tray, no window.
-  int argc = 0;
-  LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-  for (int i = 0; i + 2 < argc + 1 && argv != nullptr; ++i) {
-    if (lstrcmpW(argv[i], L"--validate-ui") == 0 && i + 2 <= argc - 1) {
-      const int code = RunValidateUi(argv[i + 1], argv[i + 2]);
-      LocalFree(argv);
-      return code;
-    }
-  }
-  if (argv != nullptr) {
-    LocalFree(argv);
-  }
-
-  // The QPC captured on the first line IS the ProcessEntry milestone: the
-  // session emits it as soon as the provider registers. The tray-only path
-  // has no window by design, so the window milestones (ConfigResolved …
-  // FirstFrameVisible) never fire here; they join with the code that shows
-  // a window.
+  // The QPC captured on the first line is the ProcessEntry milestone. Later
+  // phases add config-resolution milestones; P2 goes directly from bootstrap
+  // to creating and showing an empty chrome container.
   const std::int64_t process_entry_qpc = trace::CurrentQpc();
   trace::PerformanceTraceSession session(process_entry_qpc);
 
