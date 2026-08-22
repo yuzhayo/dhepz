@@ -1,4 +1,4 @@
-#include "ui/shell/app_window/app_window.h"
+#include "ui/app_window/app_window.h"
 
 #include <windows.h>
 #include <windowsx.h>
@@ -127,6 +127,19 @@ void AppWindow::set_settings_handler(std::function<void()> handler) {
   }
 }
 
+void AppWindow::set_chrome_buttons(bool show_pin, bool show_close) {
+  show_pin_ = show_pin;
+  show_close_ = show_close;
+}
+
+void AppWindow::set_close_handler(std::function<void()> handler) {
+  close_handler_ = std::move(handler);
+}
+
+void AppWindow::set_content_layout(std::function<void(const render::Rect&)> layout) {
+  content_layout_ = std::move(layout);
+}
+
 void AppWindow::set_content_painter(
     std::function<void(render::GdiBackend&, const render::Rect&)> painter) {
   content_painter_ = std::move(painter);
@@ -136,13 +149,42 @@ void AppWindow::set_content_key_handler(std::function<bool(int)> handler) {
   content_key_handler_ = std::move(handler);
 }
 
+void AppWindow::set_content_text_handler(std::function<bool(wchar_t)> handler) {
+  content_text_handler_ = std::move(handler);
+}
+
+void AppWindow::set_content_move_handler(std::function<bool(float, float)> handler) {
+  content_move_handler_ = std::move(handler);
+}
+
+void AppWindow::set_content_down_handler(std::function<bool(float, float)> handler) {
+  content_down_handler_ = std::move(handler);
+}
+
 void AppWindow::set_content_click_handler(std::function<bool(float, float)> handler) {
   content_click_handler_ = std::move(handler);
 }
 
+void AppWindow::set_content_wheel_handler(std::function<bool(float, float, int)> handler) {
+  content_wheel_handler_ = std::move(handler);
+}
+
 int AppWindow::ButtonCount() const {
-  // Left-to-right: pin, optional settings, close.
-  return settings_handler_ ? 3 : 2;
+  return (show_pin_ ? 1 : 0) + (settings_handler_ ? 1 : 0) + (show_close_ ? 1 : 0);
+}
+
+AppWindow::CaptionButton AppWindow::ButtonRole(int index) const {
+  if (index < 0) return CaptionButton::None;
+  if (show_pin_) {
+    if (index == 0) return CaptionButton::Pin;
+    --index;
+  }
+  if (settings_handler_) {
+    if (index == 0) return CaptionButton::Settings;
+    --index;
+  }
+  if (show_close_ && index == 0) return CaptionButton::Close;
+  return CaptionButton::None;
 }
 
 void AppWindow::Show() {
@@ -172,7 +214,11 @@ void AppWindow::Hide() {
 }
 
 void AppWindow::Close() {
-  Destroy();
+  if (close_handler_) {
+    close_handler_();
+  } else {
+    Destroy();
+  }
 }
 
 void AppWindow::TogglePin() {
@@ -193,6 +239,40 @@ void AppWindow::Destroy() {
   backend_.ReleaseSurface();
 }
 
+void AppWindow::PlaceBeside(void* anchor_window) {
+  const HWND window = static_cast<HWND>(hwnd_);
+  const HWND anchor = static_cast<HWND>(anchor_window);
+  if (window == nullptr || anchor == nullptr) return;
+
+  RECT anchor_rect{};
+  RECT window_rect{};
+  if (!GetWindowRect(anchor, &anchor_rect) || !GetWindowRect(window, &window_rect)) return;
+
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  const HMONITOR monitor = MonitorFromWindow(anchor, MONITOR_DEFAULTTONEAREST);
+  if (!GetMonitorInfoW(monitor, &monitor_info)) return;
+
+  const int width = window_rect.right - window_rect.left;
+  const int height = window_rect.bottom - window_rect.top;
+  const int gap = Px(8.0f);
+  int x = window_rect.left;
+  if (anchor_rect.right + gap + width <= monitor_info.rcWork.right) {
+    x = anchor_rect.right + gap;
+  } else if (anchor_rect.left - gap - width >= monitor_info.rcWork.left) {
+    x = anchor_rect.left - gap - width;
+  } else {
+    return;
+  }
+  const int work_top = static_cast<int>(monitor_info.rcWork.top);
+  const int work_bottom = static_cast<int>(monitor_info.rcWork.bottom);
+  const int anchor_top = static_cast<int>(anchor_rect.top);
+  const int max_y = std::max(work_top, work_bottom - height);
+  const int y = std::clamp(anchor_top, work_top, max_y);
+  SetWindowPos(window, nullptr, x, y, 0, 0,
+               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 bool AppWindow::visible() const {
   return hwnd_ != nullptr && IsWindowVisible(static_cast<HWND>(hwnd_));
 }
@@ -202,6 +282,13 @@ int AppWindow::Px(float logical) const {
 }
 
 float AppWindow::Logical(int px) const { return px * 96.0f / dpi_; }
+
+render::Rect AppWindow::ContentViewport() const {
+  const render::Size surface = backend_.surface_size();
+  return {kShadowMargin, kShadowMargin + kCaptionHeight,
+          std::max(0.0f, surface.width - kShadowMargin * 2.0f),
+          std::max(0.0f, surface.height - kShadowMargin * 2.0f - kCaptionHeight)};
+}
 
 void AppWindow::OnResized(int width_px, int height_px) {
   if (width_px <= 0 || height_px <= 0) return;
@@ -284,14 +371,20 @@ void AppWindow::RenderFullFrame() {
 
   // Warm the fonts OUTSIDE the frame: creation inside a paint scope is
   // refused by design.
-  backend_.MeasureText(std::wstring(1, kPinGlyphUnpinned),
-                       IconStyle(kPinUnpinnedSize), 0.0f);
-  backend_.MeasureText(std::wstring(1, kPinGlyphPinned),
-                       IconStyle(kPinPinnedSize), 0.0f);
-  backend_.MeasureText(std::wstring(1, kCloseGlyph), IconStyle(kCloseSize), 0.0f);
+  if (show_pin_) {
+    backend_.MeasureText(std::wstring(1, kPinGlyphUnpinned),
+                         IconStyle(kPinUnpinnedSize), 0.0f);
+    backend_.MeasureText(std::wstring(1, kPinGlyphPinned),
+                         IconStyle(kPinPinnedSize), 0.0f);
+  }
+  if (show_close_) {
+    backend_.MeasureText(std::wstring(1, kCloseGlyph), IconStyle(kCloseSize), 0.0f);
+  }
   if (settings_handler_) {
     backend_.MeasureText(std::wstring(1, kGearGlyph), IconStyle(kGearSize), 0.0f);
   }
+  const render::Rect viewport = ContentViewport();
+  if (content_layout_) content_layout_(viewport);
 
   render::Rect dirty{};
   if (!backend_.TakeInvalidation(dirty)) {
@@ -336,8 +429,9 @@ void AppWindow::PaintContent() {
   const render::Rect caption{content.x, content.y, content.width, kCaptionHeight};
   const int count = ButtonCount();
   for (int i = 0; i < count; ++i) {
-    const bool is_pin = i == 0;
-    const bool is_close = i == count - 1;
+    const CaptionButton role = ButtonRole(i);
+    const bool is_pin = role == CaptionButton::Pin;
+    const bool is_close = role == CaptionButton::Close;
     const render::Rect button{caption.right() - (count - i) * kButtonWidth, caption.y,
                               kButtonWidth, kCaptionHeight};
     if (hover_button_ == i) {
@@ -354,7 +448,7 @@ void AppWindow::PaintContent() {
   }
 
   if (content_painter_) {
-    content_painter_(backend_, content);
+    content_painter_(backend_, ContentViewport());
   }
 }
 
@@ -426,12 +520,30 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       return 0;
     }
     case WM_MOUSEMOVE: {
-      const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
+      const int x_px = GET_X_LPARAM(lparam);
+      const int y_px = GET_Y_LPARAM(lparam);
+      const int button = ButtonAt(x_px, y_px);
+      bool repaint = false;
       if (button != hover_button_) {
         hover_button_ = button;
-        if (visible()) {
-          RenderFullFrame();
-        }
+        repaint = true;
+      }
+      if (content_move_handler_) {
+        const render::Rect viewport = ContentViewport();
+        const float x = Logical(x_px) - viewport.x;
+        const float y = Logical(y_px) - viewport.y;
+        repaint = content_move_handler_(x >= 0.0f && y >= 0.0f && x < viewport.width &&
+                                                y < viewport.height
+                                            ? x
+                                            : -1.0f,
+                                        x >= 0.0f && y >= 0.0f && x < viewport.width &&
+                                                y < viewport.height
+                                            ? y
+                                            : -1.0f) ||
+                  repaint;
+      }
+      if (repaint && visible()) {
+        RenderFullFrame();
       }
       TRACKMOUSEEVENT tracking{};
       tracking.cbSize = sizeof(tracking);
@@ -440,38 +552,59 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       TrackMouseEvent(&tracking);
       return 0;
     }
-    case WM_MOUSELEAVE:
-      if (hover_button_ != -1) {
-        hover_button_ = -1;
-        if (visible()) {
+    case WM_MOUSELEAVE: {
+      bool repaint = hover_button_ != -1;
+      hover_button_ = -1;
+      if (content_move_handler_) {
+        repaint = content_move_handler_(-1.0f, -1.0f) || repaint;
+      }
+      if (repaint && visible()) {
+        RenderFullFrame();
+      }
+      return 0;
+    }
+    case WM_LBUTTONDOWN: {
+      if (ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)) >= 0) return 0;
+      if (content_down_handler_) {
+        const render::Rect viewport = ContentViewport();
+        const float x = Logical(GET_X_LPARAM(lparam)) - viewport.x;
+        const float y = Logical(GET_Y_LPARAM(lparam)) - viewport.y;
+        if (x >= 0.0f && y >= 0.0f && x < viewport.width && y < viewport.height &&
+            content_down_handler_(x, y)) {
+          SetCapture(window);
           RenderFullFrame();
         }
       }
       return 0;
+    }
     case WM_LBUTTONUP: {
+      if (GetCapture() == window) ReleaseCapture();
       const int button = ButtonAt(GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam));
       if (button < 0) {
         if (content_click_handler_) {
-          const int x_px = GET_X_LPARAM(lparam);
-          const int y_px = GET_Y_LPARAM(lparam);
-          const int margin = Px(kShadowMargin);
-          RECT client{};
-          GetClientRect(window, &client);
-          if (x_px >= margin && y_px >= margin && x_px < client.right - margin &&
-              y_px < client.bottom - margin) {
-            if (content_click_handler_(Logical(x_px - margin), Logical(y_px - margin))) {
-              RenderFullFrame();
-            }
+          const render::Rect viewport = ContentViewport();
+          const float x = Logical(GET_X_LPARAM(lparam)) - viewport.x;
+          const float y = Logical(GET_Y_LPARAM(lparam)) - viewport.y;
+          const bool inside = x >= 0.0f && y >= 0.0f && x < viewport.width &&
+                              y < viewport.height;
+          if (content_click_handler_(inside ? x : -1.0f, inside ? y : -1.0f)) {
+            RenderFullFrame();
           }
         }
         return 0;
       }
-      if (button == 0) {
-        TogglePin();
-      } else if (button == ButtonCount() - 1) {
-        Close();
-      } else if (settings_handler_) {
-        settings_handler_();
+      switch (ButtonRole(button)) {
+        case CaptionButton::Pin:
+          TogglePin();
+          break;
+        case CaptionButton::Settings:
+          settings_handler_();
+          break;
+        case CaptionButton::Close:
+          Close();
+          break;
+        case CaptionButton::None:
+          break;
       }
       return 0;
     }
@@ -483,6 +616,29 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       return DefWindowProcW(window, message, static_cast<WPARAM>(wparam),
                             static_cast<LPARAM>(lparam));
     }
+    case WM_CHAR:
+      if (content_text_handler_ &&
+          content_text_handler_(static_cast<wchar_t>(wparam))) {
+        RenderFullFrame();
+        return 0;
+      }
+      return DefWindowProcW(window, message, static_cast<WPARAM>(wparam),
+                            static_cast<LPARAM>(lparam));
+    case WM_MOUSEWHEEL:
+      if (content_wheel_handler_) {
+        POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+        ScreenToClient(window, &point);
+        const render::Rect viewport = ContentViewport();
+        const float x = Logical(point.x) - viewport.x;
+        const float y = Logical(point.y) - viewport.y;
+        if (x >= 0.0f && y >= 0.0f && x < viewport.width && y < viewport.height &&
+            content_wheel_handler_(x, y, GET_WHEEL_DELTA_WPARAM(wparam))) {
+          RenderFullFrame();
+          return 0;
+        }
+      }
+      return DefWindowProcW(window, message, static_cast<WPARAM>(wparam),
+                            static_cast<LPARAM>(lparam));
     case WM_GETMINMAXINFO: {
       const LRESULT result =
           DefWindowProcW(window, message, static_cast<WPARAM>(wparam), static_cast<LPARAM>(lparam));

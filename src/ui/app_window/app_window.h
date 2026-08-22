@@ -62,6 +62,11 @@ class AppWindow final {
   // Real teardown.
   void Destroy();
 
+  // Places this window beside an existing top-level window on the same
+  // monitor. Right is preferred, then left; if neither side has room the
+  // current placement is preserved.
+  void PlaceBeside(void* anchor_window);
+
   bool alive() const { return hwnd_ != nullptr; }
   bool visible() const;
   void* hwnd() const { return hwnd_; }
@@ -96,14 +101,26 @@ class AppWindow final {
   // dead UI. Registering a handler adds the button.
   void set_settings_handler(std::function<void()> handler);
 
+  // Core windows may reuse the shell without its built-in caption controls.
+  // Configure this before Create(); the main AppWindow keeps both by default.
+  void set_chrome_buttons(bool show_pin, bool show_close);
+  void set_close_handler(std::function<void()> handler);
+
   // Content integration (#71): the shell paints its frame and delegates the
   // content area to a presenter. The painter runs inside the frame scope,
-  // after the chrome. Key/click handlers get first chance for clicks inside
-  // the content area and for WM_KEYDOWN; returning true means "handled,
-  // repaint". Unset hooks cost nothing.
+  // after the chrome. Layout runs before the paint scope so text measurement
+  // is legal. Pointer coordinates are relative to the content viewport below
+  // the caption. Returning true means "handled, repaint". Unset hooks cost
+  // nothing.
+  void set_content_layout(std::function<void(const render::Rect&)> layout);
   void set_content_painter(std::function<void(render::GdiBackend&, const render::Rect&)> painter);
   void set_content_key_handler(std::function<bool(int virtual_key)> handler);
+  void set_content_text_handler(std::function<bool(wchar_t character)> handler);
+  void set_content_move_handler(std::function<bool(float x_logical, float y_logical)> handler);
+  void set_content_down_handler(std::function<bool(float x_logical, float y_logical)> handler);
   void set_content_click_handler(std::function<bool(float x_logical, float y_logical)> handler);
+  void set_content_wheel_handler(
+      std::function<bool(float x_logical, float y_logical, int delta)> handler);
 
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
@@ -115,12 +132,15 @@ class AppWindow final {
 
   void RenderFullFrame();
   void PaintContent();
+  render::Rect ContentViewport() const;
   int Px(float logical) const;
   float Logical(int px) const;
-  // Caption buttons left-to-right: pin, settings (only while a settings
-  // handler is registered), close. Returns the left-to-right index or -1.
+  enum class CaptionButton { None, Pin, Settings, Close };
+  // Visible caption buttons stay left-to-right: pin, settings, close.
+  // Individual core windows may omit the built-in pin and close controls.
   int ButtonAt(int x_px, int y_px) const;
   int ButtonCount() const;
+  CaptionButton ButtonRole(int index) const;
 
   void* instance_ = nullptr;
   void* hwnd_ = nullptr;  // HWND
@@ -130,13 +150,21 @@ class AppWindow final {
   std::function<void(std::uint32_t)> signal_handler_;
   std::function<void()> settle_handler_;
   std::function<void()> settings_handler_;
+  std::function<void()> close_handler_;
+  std::function<void(const render::Rect&)> content_layout_;
   std::function<void(render::GdiBackend&, const render::Rect&)> content_painter_;
   std::function<bool(int)> content_key_handler_;
+  std::function<bool(wchar_t)> content_text_handler_;
+  std::function<bool(float, float)> content_move_handler_;
+  std::function<bool(float, float)> content_down_handler_;
   std::function<bool(float, float)> content_click_handler_;
+  std::function<bool(float, float, int)> content_wheel_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;
   bool pinned_ = false;
+  bool show_pin_ = true;
+  bool show_close_ = true;
   int hover_button_ = -1;
   std::wstring title_ = L"dhepz";
 };

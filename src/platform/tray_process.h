@@ -92,6 +92,7 @@ class TrayProcess final {
   unsigned int launch_message_ = 0;
   unsigned int taskbar_created_message_ = 0;
   bool tray_icon_added_ = false;
+  bool modern_callback_ = false;
   std::function<void()> launch_handler_;
 };
 
