@@ -57,10 +57,17 @@ LayoutEngine::LayoutEngine(render::RenderBackend* backend,
     : backend_(backend), registry_(registry), state_(state) {}
 
 render::Size LayoutEngine::Measure(const config::ComponentNode& node, float max_width) {
+  const auto cached = std::find_if(measurement_cache_.begin(), measurement_cache_.end(),
+                                   [&node, max_width](const auto& entry) {
+                                     return entry.first == &node && entry.second.first == max_width;
+                                   });
+  if (cached != measurement_cache_.end()) return cached->second.second;
   const components::ComponentDescriptor* descriptor = registry_->Find(node.type());
-  return descriptor != nullptr && descriptor->measure != nullptr
-             ? descriptor->measure(node, *backend_, *state_, max_width)
-             : render::Size{max_width, 0.0f};
+  const render::Size measured = descriptor != nullptr && descriptor->measure != nullptr
+                                    ? descriptor->measure(node, *backend_, *state_, max_width)
+                                    : render::Size{max_width, 0.0f};
+  measurement_cache_.push_back({&node, {max_width, measured}});
+  return measured;
 }
 
 LayoutNode LayoutEngine::BuildGrid(const config::ComponentNode& node, render::Rect bounds,
@@ -236,9 +243,23 @@ LayoutNode LayoutEngine::Build(const config::ComponentNode& node,
 
 const LayoutNode& LayoutEngine::LayoutRoute(const config::ResolvedUiDocument& document,
                                             std::wstring_view route, render::Size size) {
+  const std::uint64_t revision = state_ != nullptr ? state_->revision() : 0;
+  if (cache_valid_ && cache_document_ == &document && cache_route_ == route &&
+      cache_size_.width == size.width && cache_size_.height == size.height &&
+      cache_revision_ == revision) {
+    return tree_;
+  }
+  if (cache_document_ != &document || cache_revision_ != revision) {
+    measurement_cache_.clear();
+  }
   tree_ = {};
   const config::Route* found = document.FindRoute(route);
   if (found != nullptr) tree_ = Build(found->root, {0.0f, 0.0f, size.width, size.height});
+  cache_document_ = &document;
+  cache_route_ = std::wstring(route);
+  cache_size_ = size;
+  cache_revision_ = revision;
+  cache_valid_ = true;
   return tree_;
 }
 

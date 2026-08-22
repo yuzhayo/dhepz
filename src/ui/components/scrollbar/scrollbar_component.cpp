@@ -51,7 +51,8 @@ ComponentResult SetValue(const config::ComponentNode& node, long long value) {
 }
 
 ComponentResult Pointer(const config::ComponentNode& node, const application::UiState&,
-                        render::Point point, const render::Rect& bounds) {
+                        render::Point point, const render::Rect& bounds,
+                        render::RenderBackend&) {
   const bool horizontal = node.GetString(L"orientation") == L"horizontal";
   const float extent = horizontal ? bounds.width : bounds.height;
   if (extent <= 0.0f || !bounds.contains(point)) return {};

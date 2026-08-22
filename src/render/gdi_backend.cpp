@@ -621,6 +621,51 @@ void GdiBackend::DrawTextRun(std::wstring_view text, const Rect& bounds, const T
   impl_->ForceOpaqueAlpha(visible);
 }
 
+void GdiBackend::DrawEditableTextRun(std::wstring_view text, const Rect& bounds,
+                                     const TextStyle& style, Color color,
+                                     const EditableTextVisual& visual) {
+  if (!impl_->in_paint_scope || impl_->buffer_dc == nullptr) return;
+  HFONT font = impl_->FontFor(style);
+  if (font == nullptr) return;
+
+  const HGDIOBJ previous = SelectObject(impl_->buffer_dc, font);
+  const auto advance = [this, text](std::size_t count) {
+    if (count == 0) return 0.0f;
+    SIZE extent{};
+    const int length = static_cast<int>(std::min(count, text.size()));
+    if (!GetTextExtentPoint32W(impl_->buffer_dc, text.data(), length, &extent)) return 0.0f;
+    return impl_->Logical(extent.cx);
+  };
+
+  const std::size_t caret = std::min(visual.caret, text.size());
+  const std::size_t selection_start = std::min(visual.selection_start, text.size());
+  const std::size_t selection_end = std::min(visual.selection_end, text.size());
+  const float caret_width = advance(caret);
+  const float full_width = advance(text.size());
+  const float selection_left = advance(std::min(selection_start, selection_end));
+  const float selection_right = advance(std::max(selection_start, selection_end));
+  const float offset = caret_width > bounds.width - 2.0f
+                           ? bounds.width - caret_width - 2.0f
+                           : 0.0f;
+  if (previous != nullptr && previous != HGDI_ERROR) SelectObject(impl_->buffer_dc, previous);
+
+  PushClip(bounds);
+  if (selection_start != selection_end) {
+    FillRect({bounds.x + offset + selection_left, bounds.y + 5.0f,
+              std::max(1.0f, selection_right - selection_left),
+              std::max(1.0f, bounds.height - 10.0f)},
+             visual.selection_color);
+  }
+  DrawTextRun(text,
+              {bounds.x + offset, bounds.y, std::max(bounds.width, full_width),
+               bounds.height},
+              style, color, TextAlign::Left, VerticalAlign::Middle);
+  FillRect({bounds.x + offset + caret_width, bounds.y + 6.0f, 1.0f,
+            std::max(1.0f, bounds.height - 12.0f)},
+           visual.caret_color);
+  PopClip();
+}
+
 void GdiBackend::DrawImage(ImageHandle image, const Rect& dest, float opacity) {
   if (!impl_->in_paint_scope || impl_->pixels == nullptr || opacity <= 0.0f) return;
   const ImageData* source_ptr = impl_->cache->Image(static_cast<std::uint64_t>(image));

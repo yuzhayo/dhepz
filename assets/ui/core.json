@@ -36,6 +36,11 @@
       "accessible_name": { "kind": "string" },
       "width": { "kind": "int" },
       "height": { "kind": "int" },
+      "join_edge": {
+        "kind": "enum",
+        "values": ["none", "start", "end", "both"],
+        "default": "none"
+      },
       "action": { "kind": "string" }
     }
   },
@@ -119,12 +124,16 @@
         },
         "selected_binding": { "kind": "binding" },
         "press_selects": { "kind": "bool", "default": false },
+        "font_family": { "kind": "string", "default": "Segoe UI" },
+        "font_size": { "kind": "int", "default": 14 },
         "tab_stop": { "kind": "bool", "default": true }
       }
     },
     "input": {
       "properties": {
         "value_binding": { "kind": "binding", "required": true },
+        "suggestions_binding": { "kind": "binding" },
+        "maximum_visible_items": { "kind": "int", "default": 6 },
         "mode": {
           "kind": "enum",
           "values": ["single_line", "multiline"],

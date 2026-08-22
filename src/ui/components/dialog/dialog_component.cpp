@@ -33,7 +33,8 @@ ComponentResult Key(const config::ComponentNode& node, const application::UiStat
 }
 
 ComponentResult Pointer(const config::ComponentNode& node, const application::UiState&,
-                        render::Point point, const render::Rect& bounds) {
+                        render::Point point, const render::Rect& bounds,
+                        render::RenderBackend&) {
   if (!node.GetBool(L"dismiss_outside_click")) return {};
   if (!DialogPanelBounds(node, bounds).contains(point)) {
     return BindingResult(node, L"open_binding", false, true);

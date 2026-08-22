@@ -120,6 +120,7 @@
   <ItemGroup>
     <ClCompile Include="**\*.cpp" />
     <ClCompile Include="..\src\core\**\*.cpp" />
+    <ClCompile Include="..\src\modules\**\*.cpp" />
     <ClCompile Include="..\src\parent\**\*.cpp" />
     <ClCompile Include="..\src\platform\**\*.cpp" />
     <ClCompile Include="..\src\render\**\*.cpp" />

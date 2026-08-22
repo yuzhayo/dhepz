@@ -17,14 +17,18 @@ void UiState::Set(std::wstring path, UiValue value) {
   });
   if (found == values_.end()) {
     values_.emplace_back(std::move(path), std::move(value));
+    ++revision_;
   } else {
+    if (found->second == value) return;
     found->second = std::move(value);
+    ++revision_;
   }
 }
 
 bool UiState::Apply(const UiPatch& patch) {
+  const std::uint64_t before = revision_;
   for (const UiChange& change : patch.changes) Set(change.path, change.value);
-  return !patch.empty();
+  return revision_ != before || !patch.route.empty();
 }
 
 bool UiState::Bool(std::wstring_view path, bool fallback) const {

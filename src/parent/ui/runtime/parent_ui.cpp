@@ -33,9 +33,20 @@ core::Status ParentUi::Attach(shell::AppWindow* window,
       [this](float x, float y) { return presenter_->HandleDown(x, y); });
   window_->set_content_click_handler(
       [this](float x, float y) { return presenter_->HandleClick(x, y); });
+  window_->set_content_double_click_handler(
+      [this](float x, float y) { return presenter_->HandleDoubleClick(x, y); });
+  window_->set_content_context_handler([this](float x, float y) {
+    return presenter_->HandleContext(x, y, window_ != nullptr ? window_->hwnd() : nullptr);
+  });
   window_->set_content_wheel_handler(
       [this](float x, float y, int delta) { return presenter_->HandleWheel(x, y, delta); });
   return core::Ok();
+}
+
+bool ParentUi::ApplyPatch(const application::UiPatch& patch) {
+  const bool changed = state_.Apply(patch);
+  if (changed && window_ != nullptr) window_->RequestRepaint();
+  return changed;
 }
 
 void ParentUi::Detach() {
@@ -47,6 +58,8 @@ void ParentUi::Detach() {
     window_->set_content_move_handler({});
     window_->set_content_down_handler({});
     window_->set_content_click_handler({});
+    window_->set_content_double_click_handler({});
+    window_->set_content_context_handler({});
     window_->set_content_wheel_handler({});
   }
   presenter_.reset();

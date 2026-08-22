@@ -1,0 +1,108 @@
+{
+  "components": [
+    {
+      "type": "window",
+      "title": "dhepz",
+      "initial_route": "terminal"
+    },
+    {
+      "type": "screen",
+      "route_id": "terminal",
+      "show_in_tabs": false,
+      "children": [
+        {
+          "type": "container",
+          "id": "terminal-frame",
+          "direction": "column",
+          "padding": { "left": 3, "top": 3, "right": 3, "bottom": 3 },
+          "gap": 0,
+          "children": [
+            {
+              "type": "container",
+              "id": "terminal-content",
+              "direction": "column",
+              "padding": { "left": 13, "top": 9, "right": 13, "bottom": 9 },
+              "gap": 9,
+              "children": [
+                {
+                  "type": "container",
+                  "id": "path-row",
+                  "direction": "row",
+                  "gap": -1,
+                  "height": 36,
+                  "children": [
+                    {
+                      "type": "input",
+                      "id": "terminal-path",
+                      "value_binding": "terminal.path",
+                      "suggestions_binding": "terminal.recent_paths",
+                      "maximum_visible_items": 6,
+                      "placeholder": "Folder path",
+                      "join_edge": "end",
+                      "width": 323,
+                      "height": 36
+                    },
+                    {
+                      "type": "button",
+                      "id": "browse-folder",
+                      "label": "",
+                      "action": "terminal.browse",
+                      "variant": "default",
+                      "join_edge": "start",
+                      "font_family": "Segoe MDL2 Assets",
+                      "font_size": 16,
+                      "accessible_name": "Browse folder",
+                      "width": 46,
+                      "height": 36
+                    }
+                  ]
+                },
+                {
+                  "type": "toggle",
+                  "id": "prepare-venv",
+                  "label": "Check / create Python venv",
+                  "checked_binding": "terminal.venv",
+                  "action": "terminal.venv.changed",
+                  "height": 26
+                },
+                {
+                  "type": "button",
+                  "id": "windows-terminal-admin",
+                  "label": "Windows Terminal Admin",
+                  "action": "terminal.launch.admin",
+                  "width": 368,
+                  "height": 40
+                },
+                {
+                  "type": "button",
+                  "id": "windows-terminal",
+                  "label": "Windows Terminal",
+                  "action": "terminal.launch.default",
+                  "width": 368,
+                  "height": 40
+                },
+                {
+                  "type": "button",
+                  "id": "ubuntu-wsl",
+                  "label": "Ubuntu (WSL)",
+                  "action": "terminal.launch.wsl",
+                  "width": 368,
+                  "height": 40
+                },
+                {
+                  "type": "text",
+                  "id": "terminal-status",
+                  "text_binding": "terminal.status",
+                  "variant": "caption",
+                  "align": "center",
+                  "width": 368,
+                  "height": 18
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

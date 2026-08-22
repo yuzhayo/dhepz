@@ -11,6 +11,13 @@
 
 namespace ui::config {
 
+struct Rgba {
+  unsigned char r = 0;
+  unsigned char g = 0;
+  unsigned char b = 0;
+  unsigned char a = 255;
+};
+
 struct ScreenSource {
   std::wstring name;
   std::wstring text;
@@ -41,7 +48,11 @@ class ComponentNode {
 };
 
 struct Route {
+  enum class BackdropKind { None, Color, Image, Screen };
+
   std::wstring id;
+  BackdropKind backdrop_kind = BackdropKind::None;
+  std::wstring backdrop_value;
   ComponentNode root;
 };
 
@@ -49,6 +60,7 @@ class ResolvedUiDocument final {
  public:
   const Route* FindRoute(std::wstring_view route) const;
   const std::wstring& initial_route() const { return initial_route_; }
+  bool Token(std::wstring_view theme, std::wstring_view name, Rgba* color) const;
 
  private:
   friend core::Status ResolveDocument(const json::Value&, const std::vector<ScreenSource>&,
@@ -56,6 +68,8 @@ class ResolvedUiDocument final {
                                       std::unique_ptr<ResolvedUiDocument>*);
   std::vector<Route> routes_;
   std::wstring initial_route_;
+  std::vector<std::wstring> theme_names_;
+  std::vector<std::vector<std::pair<std::wstring, Rgba>>> theme_tokens_;
 };
 
 core::Status ResolveDocument(const json::Value& core, const std::vector<ScreenSource>& sources,

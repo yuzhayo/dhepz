@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -17,9 +18,11 @@ class UiState final {
   long long Integer(std::wstring_view path, long long fallback = 0) const;
   std::wstring Text(std::wstring_view path, std::wstring_view fallback = {}) const;
   const std::vector<std::wstring>* Strings(std::wstring_view path) const;
+  std::uint64_t revision() const { return revision_; }
 
  private:
   std::vector<std::pair<std::wstring, UiValue>> values_;
+  std::uint64_t revision_ = 0;
 };
 
 }  // namespace ui::application

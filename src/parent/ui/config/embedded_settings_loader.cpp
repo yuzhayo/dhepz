@@ -45,4 +45,26 @@ core::Status LoadEmbeddedSettingsDocument(
                          diagnostics, document);
 }
 
+core::Status LoadEmbeddedFeatureDocument(
+    void* module_handle, const std::vector<EmbeddedScreenResource>& resources,
+    std::vector<Diagnostic>* diagnostics,
+    std::unique_ptr<ResolvedUiDocument>* document) {
+  if (resources.empty()) {
+    return DHEPZ_ERR(core::ErrorCode::NotFound, L"No feature UI resource is registered");
+  }
+  HMODULE module = static_cast<HMODULE>(module_handle);
+  std::wstring core_text;
+  DHEPZ_RETURN_IF_ERROR(ReadResource(module, IDR_UI_CORE_JSON, &core_text));
+  json::Value core_value;
+  DHEPZ_RETURN_IF_ERROR(json::Parse(core_text, &core_value));
+  std::vector<ScreenSource> sources;
+  sources.reserve(resources.size());
+  for (const EmbeddedScreenResource& resource : resources) {
+    std::wstring text;
+    DHEPZ_RETURN_IF_ERROR(ReadResource(module, resource.resource_id, &text));
+    sources.push_back({resource.name, std::move(text)});
+  }
+  return ResolveDocument(core_value, sources, diagnostics, document);
+}
+
 }  // namespace ui::config

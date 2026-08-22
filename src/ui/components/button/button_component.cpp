@@ -23,13 +23,17 @@ void Paint(const config::ComponentNode& node, const render::Rect& bounds,
   if (node.GetString(L"variant") == L"danger" && (visual.hovered || visual.pressed)) {
     fill = palette.danger;
   }
+  const render::CornerRadius radius = CornerRadiusFor(node);
   if (node.GetString(L"variant") != L"subtle" || visual.hovered || visual.pressed) {
-    backend.FillRoundedRect(bounds, render::CornerRadius::Uniform(5.0f), fill);
+    backend.FillRoundedRect(bounds, radius, fill);
   }
   if (node.GetString(L"variant") != L"subtle") {
-    backend.StrokeRoundedRect(bounds, render::CornerRadius::Uniform(5.0f), palette.border, 1.0f);
+    backend.StrokeRoundedRect(bounds, radius, palette.border, 1.0f);
   }
-  backend.DrawTextRun(node.GetString(L"label"), bounds, {}, palette.text,
+  render::TextStyle label_style;
+  label_style.family = node.GetString(L"font_family", L"Segoe UI");
+  label_style.size_px = static_cast<float>(node.GetInt(L"font_size", 14));
+  backend.DrawTextRun(node.GetString(L"label"), bounds, label_style, palette.text,
                       render::TextAlign::Center, render::VerticalAlign::Middle);
   PaintFocus(bounds, visual, palette, backend);
 }

@@ -89,6 +89,20 @@ render::TextAlign TextAlignFor(const config::ComponentNode& node) {
   return render::TextAlign::Left;
 }
 
+render::CornerRadius CornerRadiusFor(const config::ComponentNode& node, float fallback) {
+  render::CornerRadius radius = render::CornerRadius::Uniform(fallback);
+  const std::wstring edge = node.GetString(L"join_edge", L"none");
+  if (edge == L"start" || edge == L"both") {
+    radius.top_left = 0.0f;
+    radius.bottom_left = 0.0f;
+  }
+  if (edge == L"end" || edge == L"both") {
+    radius.top_right = 0.0f;
+    radius.bottom_right = 0.0f;
+  }
+  return radius;
+}
+
 void PaintFocus(const render::Rect& bounds, const ComponentVisualState& visual,
                 const ComponentPalette& palette, render::RenderBackend& backend, float radius) {
   if (!visual.focused) return;

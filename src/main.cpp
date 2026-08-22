@@ -6,6 +6,7 @@
 
 #include "app_version.h"
 #include "orchestrator/window_orchestrator.h"
+#include "parent/logic/module_registry.h"
 #include "platform/performance_trace.h"
 #include "platform/tray_process.h"
 #include "parent/ui/config/embedded_settings_loader.h"
@@ -80,6 +81,34 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
     BootstrapFailed(15, message.c_str());
   }
 
+  const auto& module_descriptors = modules::ModuleRegistry::All();
+  if (module_descriptors.empty()) {
+    tray_process.Shutdown();
+    BootstrapFailed(16, L"No feature module is registered.");
+  }
+  std::vector<ui::config::EmbeddedScreenResource> module_resources;
+  module_resources.reserve(module_descriptors.size());
+  for (const modules::ModuleDescriptor* descriptor : module_descriptors) {
+    module_resources.push_back(
+        {std::wstring(descriptor->screen_name), descriptor->ui_resource_id});
+  }
+  std::vector<ui::config::Diagnostic> feature_diagnostics;
+  std::unique_ptr<ui::config::ResolvedUiDocument> feature_document;
+  const core::Status feature_status = ui::config::LoadEmbeddedFeatureDocument(
+      instance, module_resources, &feature_diagnostics, &feature_document);
+  if (!feature_status.ok()) {
+    tray_process.Shutdown();
+    const std::wstring message = L"The feature UI could not be loaded.\n\n" +
+                                 feature_status.Message();
+    BootstrapFailed(17, message.c_str());
+  }
+  for (const modules::ModuleDescriptor* descriptor : module_descriptors) {
+    if (feature_document->FindRoute(descriptor->route_id) == nullptr) {
+      tray_process.Shutdown();
+      BootstrapFailed(18, L"A module route is missing from its UI document.");
+    }
+  }
+
   // Non-fatal by design: a headless session has no shell to host the icon,
   // and the process must still run (CI, automated runs).
   tray_process.InstallTray();
@@ -87,7 +116,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   // One resident owner PID hosts every window. A secondary EXE invocation
   // asks the orchestrator for another window, then exits without a tray of
   // its own.
-  orchestrator::WindowOrchestrator windows(instance, settings_document.get());
+  orchestrator::WindowOrchestrator windows(instance, settings_document.get(),
+                                            feature_document.get(),
+                                            module_descriptors.front());
 
   tray_process.set_launch_handler([&] {
     if (!windows.OpenWindow()) {
@@ -97,7 +128,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   });
   if (!windows.OpenWindow()) {
     tray_process.Shutdown();
-    BootstrapFailed(16, L"The application window could not be created.");
+    BootstrapFailed(19, L"The application window could not be created.");
   }
 
   const int result = tray_process.Run();

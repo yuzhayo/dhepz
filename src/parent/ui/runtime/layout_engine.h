@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "render/render_backend.h"
@@ -37,6 +39,13 @@ class LayoutEngine final {
   const components::ComponentRegistry* registry_;
   const application::UiState* state_;
   LayoutNode tree_;
+  const config::ResolvedUiDocument* cache_document_ = nullptr;
+  std::wstring cache_route_;
+  render::Size cache_size_{};
+  std::uint64_t cache_revision_ = 0;
+  bool cache_valid_ = false;
+  std::vector<std::pair<const config::ComponentNode*, std::pair<float, render::Size>>>
+      measurement_cache_;
 };
 
 }  // namespace ui::layout

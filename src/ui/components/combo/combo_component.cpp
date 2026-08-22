@@ -90,11 +90,11 @@ ComponentResult OverlayPointer(const config::ComponentNode& node,
                                const application::UiState& state, render::Point point,
                                const render::Rect& anchor, render::Size viewport) {
   const std::vector<std::wstring>* items = BoundStrings(node, L"items_binding", state);
-  if (items == nullptr || items->empty()) return ActionResult(node);
+  if (items == nullptr || items->empty()) return {};
   const render::Rect popup = PopupBounds(node, anchor, viewport, items->size());
-  if (!popup.contains(point)) return ActionResult(node);
+  if (!popup.contains(point)) return {};
   const std::size_t index = static_cast<std::size_t>((point.y - popup.y) / kRowHeight);
-  if (index >= items->size()) return ActionResult(node);
+  if (index >= items->size()) return {};
   return BindingResult(node, L"selected_value_binding", (*items)[index], true);
 }
 }  // namespace

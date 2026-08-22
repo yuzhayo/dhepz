@@ -14,6 +14,7 @@ class FocusCoordinator final {
   explicit FocusCoordinator(const components::ComponentRegistry* registry);
 
   void Clear();
+  void Blur();
   void Rebuild(const layout::LayoutNode* tree);
   const config::ComponentNode* current() const;
   bool Focus(const config::ComponentNode* node);
