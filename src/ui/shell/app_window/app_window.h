@@ -4,14 +4,14 @@
 //
 // The lifecycle rules, because they are the point of this file:
 //
-//   - Hide (or close): the back buffer and every window-scoped
+//   - Hide: the back buffer and every window-scoped
 //     resource are released. The buffer is the one large allocation and it
 //     scales with window size; keeping it while hidden is the drift G1
 //     forbids.
 //   - Show: a full frame is rendered offscreen BEFORE ShowWindow,
 //     so the window never appears empty and then fills in.
-//   - Close hides. The process stays tray-resident; it does not exit. Exit
-//     belongs to the tray menu.
+//   - Close destroys this native window. The tray owner stays resident and
+//     may create another AppWindow later. Exit belongs to the tray menu.
 //
 // Presentation goes through UpdateLayeredWindow: the buffer carries
 // per-pixel alpha, which buys rounded corners and a soft shadow with no
@@ -57,7 +57,7 @@ class AppWindow final {
   // Releases the buffer and window-scoped resources; the window object
   // survives hidden.
   void Hide();
-  // Resident semantics: Close() is Hide(). The process stays up.
+  // Destroys this native window; process lifetime belongs to the tray owner.
   void Close();
   // Real teardown.
   void Destroy();

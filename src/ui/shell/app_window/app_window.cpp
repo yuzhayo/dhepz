@@ -172,9 +172,7 @@ void AppWindow::Hide() {
 }
 
 void AppWindow::Close() {
-  // Resident semantics: closing the window returns to the tray, it does not
-  // exit the process. Exit belongs to the tray menu.
-  Hide();
+  Destroy();
 }
 
 void AppWindow::TogglePin() {
@@ -192,6 +190,7 @@ void AppWindow::Destroy() {
     DestroyWindow(static_cast<HWND>(hwnd_));
     hwnd_ = nullptr;
   }
+  backend_.ReleaseSurface();
 }
 
 bool AppWindow::visible() const {
@@ -494,7 +493,7 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
       return result;
     }
     case WM_CLOSE:
-      Close();  // resident: hide, never exit
+      Close();  // destroys this window; the tray owner remains resident
       return 0;
     case WM_DESTROY:
       hwnd_ = nullptr;
