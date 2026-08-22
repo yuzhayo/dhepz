@@ -7,13 +7,19 @@ namespace ui::config {
 class ResolvedUiDocument;
 }
 
+namespace modules {
+struct ModuleDescriptor;
+}
+
 namespace orchestrator {
 
 // Owns production window composition. The tray only requests a new app
 // window; pairing AppWindow with its core Settings window belongs here.
 class WindowOrchestrator final {
  public:
-  WindowOrchestrator(void* instance, const ui::config::ResolvedUiDocument* settings_document);
+  WindowOrchestrator(void* instance, const ui::config::ResolvedUiDocument* settings_document,
+                     const ui::config::ResolvedUiDocument* feature_document,
+                     const modules::ModuleDescriptor* feature);
   ~WindowOrchestrator();
 
   WindowOrchestrator(const WindowOrchestrator&) = delete;
@@ -27,6 +33,8 @@ class WindowOrchestrator final {
 
   void* instance_ = nullptr;
   const ui::config::ResolvedUiDocument* settings_document_ = nullptr;
+  const ui::config::ResolvedUiDocument* feature_document_ = nullptr;
+  const modules::ModuleDescriptor* feature_ = nullptr;
   std::vector<std::unique_ptr<WindowSession>> windows_;
 };
 

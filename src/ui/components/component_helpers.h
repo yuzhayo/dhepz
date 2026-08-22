@@ -25,6 +25,8 @@ ComponentResult ActionResult(const config::ComponentNode& node,
                              application::UiValue payload = {});
 render::TextStyle TextStyleFor(const config::ComponentNode& node);
 render::TextAlign TextAlignFor(const config::ComponentNode& node);
+render::CornerRadius CornerRadiusFor(const config::ComponentNode& node,
+                                     float fallback = 5.0f);
 void PaintFocus(const render::Rect& bounds, const ComponentVisualState& visual,
                 const ComponentPalette& palette, render::RenderBackend& backend,
                 float radius = 5.0f);

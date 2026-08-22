@@ -52,7 +52,8 @@ void Paint(const config::ComponentNode& node, const render::Rect& bounds,
 }
 
 ComponentResult Pointer(const config::ComponentNode& node, const application::UiState& state,
-                        render::Point point, const render::Rect& bounds) {
+                        render::Point point, const render::Rect& bounds,
+                        render::RenderBackend&) {
   if (node.GetString(L"selection") == L"none") return ActionResult(node);
   const std::vector<std::wstring>* items = BoundStrings(node, L"items_binding", state);
   if (items == nullptr || items->empty() || !bounds.contains(point)) return {};

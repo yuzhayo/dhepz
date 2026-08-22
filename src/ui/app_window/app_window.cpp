@@ -62,6 +62,7 @@ bool AppWindow::Create(void* instance, float content_width, float content_height
 
   WNDCLASSEXW window_class{};
   window_class.cbSize = sizeof(window_class);
+  window_class.style = CS_DBLCLKS;
   window_class.lpfnWndProc = reinterpret_cast<WNDPROC>(&AppWindow::WindowProc);
   window_class.hInstance = static_cast<HINSTANCE>(instance);
   window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -165,8 +166,25 @@ void AppWindow::set_content_click_handler(std::function<bool(float, float)> hand
   content_click_handler_ = std::move(handler);
 }
 
+void AppWindow::set_content_double_click_handler(std::function<bool(float, float)> handler) {
+  content_double_click_handler_ = std::move(handler);
+}
+
+void AppWindow::set_content_context_handler(std::function<bool(float, float)> handler) {
+  content_context_handler_ = std::move(handler);
+}
+
 void AppWindow::set_content_wheel_handler(std::function<bool(float, float, int)> handler) {
   content_wheel_handler_ = std::move(handler);
+}
+
+void AppWindow::set_native_message_handler(
+    std::function<bool(unsigned int, long long)> handler) {
+  native_message_handler_ = std::move(handler);
+}
+
+void AppWindow::RequestRepaint() {
+  if (hwnd_ != nullptr && visible()) RenderFullFrame();
 }
 
 int AppWindow::ButtonCount() const {
@@ -469,6 +487,7 @@ long long __stdcall AppWindow::WindowProc(void* window, unsigned int message,
 
 long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
                                    unsigned long long wparam, long long lparam) {
+  if (native_message_handler_ && native_message_handler_(message, lparam)) return 0;
   HWND window = static_cast<HWND>(window_handle);
   if (message == drain_message_ && signals_) {
     signals_->DrainMessage();
@@ -605,6 +624,34 @@ long long AppWindow::HandleMessage(void* window_handle, unsigned int message,
           break;
         case CaptionButton::None:
           break;
+      }
+      return 0;
+    }
+    case WM_LBUTTONDBLCLK: {
+      if (content_double_click_handler_) {
+        const render::Rect viewport = ContentViewport();
+        const float x = Logical(GET_X_LPARAM(lparam)) - viewport.x;
+        const float y = Logical(GET_Y_LPARAM(lparam)) - viewport.y;
+        if (x >= 0.0f && y >= 0.0f && x < viewport.width && y < viewport.height &&
+            content_double_click_handler_(x, y)) {
+          RenderFullFrame();
+        }
+      }
+      return 0;
+    }
+    case WM_CONTEXTMENU: {
+      if (content_context_handler_) {
+        float x = -1.0f;
+        float y = -1.0f;
+        if (static_cast<short>(LOWORD(lparam)) != -1 ||
+            static_cast<short>(HIWORD(lparam)) != -1) {
+          POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+          ScreenToClient(window, &point);
+          const render::Rect viewport = ContentViewport();
+          x = Logical(point.x) - viewport.x;
+          y = Logical(point.y) - viewport.y;
+        }
+        if (content_context_handler_(x, y)) RenderFullFrame();
       }
       return 0;
     }

@@ -103,6 +103,9 @@ class GdiBackend final : public RenderBackend {
                          float stroke_width) override;
   void DrawTextRun(std::wstring_view text, const Rect& bounds, const TextStyle& style, Color color,
                 TextAlign horizontal, VerticalAlign vertical) override;
+  void DrawEditableTextRun(std::wstring_view text, const Rect& bounds,
+                           const TextStyle& style, Color color,
+                           const EditableTextVisual& visual) override;
   void DrawImage(ImageHandle image, const Rect& dest, float opacity) override;
 
   // RenderBackend — clip and translation stacks.

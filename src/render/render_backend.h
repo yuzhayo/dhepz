@@ -48,6 +48,7 @@
 // acceptance criteria.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -122,6 +123,14 @@ struct TextStyle {
   bool italic = false;
 };
 
+struct EditableTextVisual {
+  std::size_t selection_start = 0;
+  std::size_t selection_end = 0;
+  std::size_t caret = 0;
+  Color selection_color{};
+  Color caret_color{};
+};
+
 // Opaque, backend-owned. Zero is never a valid handle.
 enum class ImageHandle : std::uint64_t { Invalid = 0 };
 
@@ -172,7 +181,16 @@ class RenderBackend {
   virtual void StrokeRoundedRect(const Rect& rect, const CornerRadius& radius, Color color,
                                  float stroke_width) = 0;
   virtual void DrawTextRun(std::wstring_view text, const Rect& bounds, const TextStyle& style,
-                        Color color, TextAlign horizontal, VerticalAlign vertical) = 0;
+                         Color color, TextAlign horizontal, VerticalAlign vertical) = 0;
+  // Editable text needs glyph-exact selection and caret placement. The
+  // backend already owns the font metrics used to draw the run, so those
+  // pixels stay here instead of being estimated by an input component.
+  virtual void DrawEditableTextRun(std::wstring_view text, const Rect& bounds,
+                                   const TextStyle& style, Color color,
+                                   const EditableTextVisual& visual) {
+    (void)visual;
+    DrawTextRun(text, bounds, style, color, TextAlign::Left, VerticalAlign::Middle);
+  }
   virtual void DrawImage(ImageHandle image, const Rect& dest, float opacity) = 0;
 
   // Clip and translation stacks. Every Push must be balanced by a Pop

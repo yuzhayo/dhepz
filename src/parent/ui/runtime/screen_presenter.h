@@ -24,6 +24,8 @@ class ScreenPresenter final {
   bool HandleMove(float x, float y);
   bool HandleDown(float x, float y);
   bool HandleClick(float x, float y);
+  bool HandleDoubleClick(float x, float y);
+  bool HandleContext(float x, float y, void* owner_window);
   bool HandleKey(int virtual_key);
   bool HandleText(wchar_t character);
   bool HandleWheel(float x, float y, int delta);
@@ -35,6 +37,8 @@ class ScreenPresenter final {
                                        const config::ComponentNode* source) const;
   const layout::LayoutNode* FindDialog(const layout::LayoutNode& node) const;
   void PaintNode(const layout::LayoutNode& node);
+  void PaintBackdrop();
+  void ApplyDocumentPalette();
   bool Activate(const config::ComponentNode* node);
   bool Dispatch(components::ComponentResult result);
 
@@ -43,6 +47,7 @@ class ScreenPresenter final {
   application::UiActionRegistry* actions_;
   components::ComponentRegistry registry_;
   layout::LayoutEngine layout_;
+  layout::LayoutEngine backdrop_layout_;
   focus::FocusCoordinator focus_;
   const config::ResolvedUiDocument* document_ = nullptr;
   const layout::LayoutNode* tree_ = nullptr;

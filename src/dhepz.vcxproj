@@ -156,6 +156,7 @@
     <ClInclude Include="**\*.h" />
     <None Include="app.manifest" />
     <ResourceCompile Include="app.rc" />
+    <ResourceCompile Include="modules\**\*.rc" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

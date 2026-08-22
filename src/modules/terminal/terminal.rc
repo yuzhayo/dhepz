@@ -1,0 +1,5 @@
+#include <windows.h>
+
+#include "terminal_resources.h"
+
+IDR_TERMINAL_SCREEN_JSON RCDATA "terminal.json"

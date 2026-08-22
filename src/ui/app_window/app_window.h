@@ -119,8 +119,15 @@ class AppWindow final {
   void set_content_move_handler(std::function<bool(float x_logical, float y_logical)> handler);
   void set_content_down_handler(std::function<bool(float x_logical, float y_logical)> handler);
   void set_content_click_handler(std::function<bool(float x_logical, float y_logical)> handler);
+  void set_content_double_click_handler(
+      std::function<bool(float x_logical, float y_logical)> handler);
+  void set_content_context_handler(
+      std::function<bool(float x_logical, float y_logical)> handler);
   void set_content_wheel_handler(
       std::function<bool(float x_logical, float y_logical, int delta)> handler);
+  void set_native_message_handler(
+      std::function<bool(unsigned int message, long long lparam)> handler);
+  void RequestRepaint();
 
  private:
   static long long __stdcall WindowProc(void* window, unsigned int message,
@@ -158,7 +165,10 @@ class AppWindow final {
   std::function<bool(float, float)> content_move_handler_;
   std::function<bool(float, float)> content_down_handler_;
   std::function<bool(float, float)> content_click_handler_;
+  std::function<bool(float, float)> content_double_click_handler_;
+  std::function<bool(float, float)> content_context_handler_;
   std::function<bool(float, float, int)> content_wheel_handler_;
+  std::function<bool(unsigned int, long long)> native_message_handler_;
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;

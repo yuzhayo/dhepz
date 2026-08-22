@@ -1,5 +1,7 @@
 #include "parent/ui/runtime/screen_presenter.h"
 
+#include <algorithm>
+#include <utility>
 #include <windows.h>
 
 namespace ui::presenter {
@@ -10,6 +12,7 @@ ScreenPresenter::ScreenPresenter(render::RenderBackend* backend, application::Ui
       state_(state),
       actions_(actions),
       layout_(backend, &registry_, state),
+      backdrop_layout_(backend, &registry_, state),
       focus_(&registry_) {}
 
 void ScreenPresenter::SetDocument(const config::ResolvedUiDocument* document) {
@@ -20,6 +23,31 @@ void ScreenPresenter::SetDocument(const config::ResolvedUiDocument* document) {
   hovered_ = nullptr;
   pressed_ = nullptr;
   expanded_ = nullptr;
+  ApplyDocumentPalette();
+}
+
+void ScreenPresenter::ApplyDocumentPalette() {
+  if (document_ == nullptr) return;
+  auto assign = [this](std::wstring_view name, render::Color* target) {
+    config::Rgba value;
+    if (document_->Token(L"dark", name, &value)) {
+      *target = {value.r, value.g, value.b, value.a};
+    }
+  };
+  assign(L"surface", &palette_.surface);
+  assign(L"surface_alt", &palette_.control);
+  assign(L"border", &palette_.border);
+  assign(L"text", &palette_.text);
+  assign(L"accent", &palette_.focus);
+  assign(L"danger", &palette_.danger);
+  auto lighter = [](render::Color source, int amount) {
+    const auto channel = [amount](unsigned char value) {
+      return static_cast<unsigned char>(std::min(255, static_cast<int>(value) + amount));
+    };
+    return render::Color{channel(source.r), channel(source.g), channel(source.b), source.a};
+  };
+  palette_.control_hover = lighter(palette_.control, 14);
+  palette_.control_pressed = lighter(palette_.control, 28);
 }
 
 void ScreenPresenter::Prepare(render::Size size) {
@@ -34,6 +62,7 @@ void ScreenPresenter::Prepare(render::Size size) {
 void ScreenPresenter::Paint(const render::Rect& viewport) {
   if (tree_ == nullptr) return;
   backend_->PushTranslation({viewport.x, viewport.y});
+  PaintBackdrop();
   PaintNode(*tree_);
   if (expanded_ != nullptr) {
     const layout::LayoutNode* anchor = FindSource(*tree_, expanded_);
@@ -44,6 +73,33 @@ void ScreenPresenter::Paint(const render::Rect& viewport) {
     }
   }
   backend_->PopTranslation();
+}
+
+void ScreenPresenter::PaintBackdrop() {
+  if (document_ == nullptr) return;
+  const config::Route* route = document_->FindRoute(route_);
+  if (route == nullptr || route->backdrop_kind == config::Route::BackdropKind::None) return;
+  const render::Rect full{0.0f, 0.0f, viewport_size_.width, viewport_size_.height};
+  if (route->backdrop_kind == config::Route::BackdropKind::Color) {
+    config::Rgba color;
+    if (document_->Token(L"dark", route->backdrop_value, &color)) {
+      backend_->FillRect(full, {color.r, color.g, color.b, color.a});
+    }
+    return;
+  }
+  if (route->backdrop_kind == config::Route::BackdropKind::Image) {
+    const render::ImageHandle image = backend_->LoadImageFile(route->backdrop_value);
+    if (image != render::ImageHandle::Invalid) {
+      backend_->DrawImage(image, full, 1.0f);
+      backend_->ReleaseImage(image);
+    }
+    return;
+  }
+  if (route->backdrop_kind == config::Route::BackdropKind::Screen) {
+    const layout::LayoutNode& backdrop =
+        backdrop_layout_.LayoutRoute(*document_, route->backdrop_value, viewport_size_);
+    PaintNode(backdrop);
+  }
 }
 
 void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
@@ -119,14 +175,19 @@ bool ScreenPresenter::HandleMove(float x, float y) {
 
 bool ScreenPresenter::HandleDown(float x, float y) {
   if (expanded_ != nullptr) {
-    pressed_ = nullptr;
+    const layout::LayoutNode* hit = tree_ != nullptr ? Hit(*tree_, x, y) : nullptr;
+    pressed_ = hit != nullptr ? hit->source : nullptr;
     return true;
   }
   const layout::LayoutNode* hit = tree_ != nullptr ? Hit(*tree_, x, y) : nullptr;
   const config::ComponentNode* next = hit != nullptr ? hit->source : nullptr;
   const bool changed = pressed_ != next;
   pressed_ = next;
-  if (next != nullptr) focus_.Focus(next);
+  if (next != nullptr) {
+    focus_.Focus(next);
+  } else {
+    focus_.Blur();
+  }
   return changed || next != nullptr;
 }
 
@@ -159,24 +220,31 @@ bool ScreenPresenter::Activate(const config::ComponentNode* node) {
 
 bool ScreenPresenter::HandleClick(float x, float y) {
   if (tree_ == nullptr) return false;
+  bool dismissed_overlay = false;
   if (expanded_ != nullptr) {
     const layout::LayoutNode* anchor = FindSource(*tree_, expanded_);
     const components::ComponentDescriptor* descriptor = registry_.Find(expanded_->type());
+    components::ComponentResult overlay_result;
     if (anchor != nullptr && descriptor != nullptr && descriptor->overlay_pointer != nullptr) {
-      Dispatch(descriptor->overlay_pointer(*expanded_, *state_, {x, y}, anchor->bounds,
-                                           viewport_size_));
+      overlay_result = descriptor->overlay_pointer(*expanded_, *state_, {x, y},
+                                                   anchor->bounds, viewport_size_);
     }
     expanded_ = nullptr;
     hovered_ = nullptr;
-    pressed_ = nullptr;
-    return true;
+    dismissed_overlay = true;
+    if (overlay_result.handled || !overlay_result.patch.empty() ||
+        !overlay_result.event.action.empty()) {
+      pressed_ = nullptr;
+      return Dispatch(std::move(overlay_result));
+    }
   }
 
   if (const layout::LayoutNode* dialog = FindDialog(*tree_)) {
     const components::ComponentDescriptor* descriptor = registry_.Find(dialog->source->type());
     if (descriptor != nullptr && descriptor->pointer != nullptr) {
       const components::ComponentResult result =
-          descriptor->pointer(*dialog->source, *state_, {x, y}, dialog->bounds);
+          descriptor->pointer(*dialog->source, *state_, {x, y}, dialog->bounds,
+                              *backend_);
       if (result.handled || !result.patch.empty() || !result.event.action.empty()) {
         pressed_ = nullptr;
         return Dispatch(result);
@@ -188,17 +256,55 @@ bool ScreenPresenter::HandleClick(float x, float y) {
   const config::ComponentNode* released = hit != nullptr ? hit->source : nullptr;
   const config::ComponentNode* pressed = pressed_;
   pressed_ = nullptr;
-  if (released == nullptr || released != pressed || hit == nullptr) return pressed != nullptr;
+  if (released == nullptr || released != pressed || hit == nullptr) {
+    return dismissed_overlay || pressed != nullptr;
+  }
   const components::ComponentDescriptor* descriptor = registry_.Find(released->type());
-  if (descriptor == nullptr) return false;
-  if (descriptor->paint_overlay != nullptr) {
+  if (descriptor == nullptr) return dismissed_overlay;
+  const bool has_overlay = descriptor->paint_overlay != nullptr &&
+                           (descriptor->has_overlay == nullptr ||
+                            descriptor->has_overlay(*released, *state_));
+  if (has_overlay) {
+    if (descriptor->pointer != nullptr) {
+      Dispatch(descriptor->pointer(*released, *state_, {x, y}, hit->bounds,
+                                   *backend_));
+    }
     expanded_ = released;
     return true;
   }
   if (descriptor->pointer != nullptr) {
-    return Dispatch(descriptor->pointer(*released, *state_, {x, y}, hit->bounds));
+    return Dispatch(descriptor->pointer(*released, *state_, {x, y}, hit->bounds,
+                                        *backend_)) ||
+           dismissed_overlay;
   }
-  return Activate(released);
+  return Activate(released) || dismissed_overlay;
+}
+
+bool ScreenPresenter::HandleDoubleClick(float x, float y) {
+  const layout::LayoutNode* hit = tree_ != nullptr ? Hit(*tree_, x, y) : nullptr;
+  if (hit == nullptr || hit->source == nullptr) return false;
+  focus_.Focus(hit->source);
+  const components::ComponentDescriptor* descriptor = registry_.Find(hit->source->type());
+  return descriptor != nullptr && descriptor->double_click != nullptr
+             ? Dispatch(descriptor->double_click(*hit->source, *state_))
+             : false;
+}
+
+bool ScreenPresenter::HandleContext(float x, float y, void* owner_window) {
+  const config::ComponentNode* target = nullptr;
+  if (x >= 0.0f && y >= 0.0f && tree_ != nullptr) {
+    const layout::LayoutNode* hit = Hit(*tree_, x, y);
+    target = hit != nullptr ? hit->source : nullptr;
+  } else {
+    target = focus_.current();
+  }
+  if (target == nullptr) return false;
+  focus_.Focus(target);
+  expanded_ = nullptr;
+  const components::ComponentDescriptor* descriptor = registry_.Find(target->type());
+  return descriptor != nullptr && descriptor->context_menu != nullptr
+             ? Dispatch(descriptor->context_menu(*target, *state_, owner_window))
+             : false;
 }
 
 bool ScreenPresenter::HandleKey(int virtual_key) {
@@ -227,6 +333,7 @@ bool ScreenPresenter::HandleKey(int virtual_key) {
     return true;
   }
   if (descriptor != nullptr && descriptor->paint_overlay != nullptr &&
+      (descriptor->has_overlay == nullptr || descriptor->has_overlay(*current, *state_)) &&
       (virtual_key == VK_RETURN || virtual_key == VK_SPACE)) {
     expanded_ = expanded_ == current ? nullptr : current;
     return true;

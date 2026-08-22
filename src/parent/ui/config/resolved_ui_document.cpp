@@ -6,6 +6,30 @@
 namespace ui::config {
 namespace {
 
+bool ParseHexColor(const std::wstring& text, Rgba* out) {
+  if (out == nullptr || (text.size() != 7 && text.size() != 9) || text[0] != L'#') return false;
+  auto nibble = [](wchar_t value, unsigned int* out_value) {
+    if (value >= L'0' && value <= L'9') *out_value = static_cast<unsigned int>(value - L'0');
+    else if (value >= L'a' && value <= L'f') *out_value = static_cast<unsigned int>(value - L'a' + 10);
+    else if (value >= L'A' && value <= L'F') *out_value = static_cast<unsigned int>(value - L'A' + 10);
+    else return false;
+    return true;
+  };
+  unsigned int channels[4]{0, 0, 0, 255};
+  const int count = text.size() == 9 ? 4 : 3;
+  for (int channel = 0; channel < count; ++channel) {
+    unsigned int high = 0;
+    unsigned int low = 0;
+    if (!nibble(text[1 + channel * 2], &high) || !nibble(text[2 + channel * 2], &low)) {
+      return false;
+    }
+    channels[channel] = high * 16 + low;
+  }
+  *out = {static_cast<unsigned char>(channels[0]), static_cast<unsigned char>(channels[1]),
+          static_cast<unsigned char>(channels[2]), static_cast<unsigned char>(channels[3])};
+  return true;
+}
+
 const json::Value* CatalogProperties(const json::Value& core, std::wstring_view type) {
   const json::Value* components = core.ObjectField(L"components");
   const json::Value* catalog = components != nullptr ? components->Find(type) : nullptr;
@@ -85,6 +109,20 @@ const Route* ResolvedUiDocument::FindRoute(std::wstring_view route) const {
   return found == routes_.end() ? nullptr : &*found;
 }
 
+bool ResolvedUiDocument::Token(std::wstring_view theme, std::wstring_view name,
+                               Rgba* color) const {
+  for (std::size_t index = 0; index < theme_names_.size(); ++index) {
+    if (theme_names_[index] != theme) continue;
+    for (const auto& [token, value] : theme_tokens_[index]) {
+      if (token == name) {
+        if (color != nullptr) *color = value;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 core::Status ResolveDocument(const json::Value& core, const std::vector<ScreenSource>& sources,
                              std::vector<Diagnostic>* diagnostics,
                              std::unique_ptr<ResolvedUiDocument>* document) {
@@ -95,6 +133,22 @@ core::Status ResolveDocument(const json::Value& core, const std::vector<ScreenSo
   document->reset();
   DHEPZ_RETURN_IF_ERROR(ValidateCore(core, diagnostics));
   auto resolved = std::make_unique<ResolvedUiDocument>();
+  const json::Value* tokens = core.ObjectField(L"tokens");
+  if (tokens != nullptr) {
+    for (const auto& [theme_name, theme] : tokens->members()) {
+      std::vector<std::pair<std::wstring, Rgba>> colors;
+      if (theme.is_object()) {
+        for (const auto& [token_name, encoded] : theme.members()) {
+          Rgba color;
+          if (encoded.is_string() && ParseHexColor(encoded.AsString(), &color)) {
+            colors.emplace_back(token_name, color);
+          }
+        }
+      }
+      resolved->theme_names_.push_back(theme_name);
+      resolved->theme_tokens_.push_back(std::move(colors));
+    }
+  }
   std::wstring requested_initial_route;
   for (const ScreenSource& source : sources) {
     json::Value parsed;
@@ -117,7 +171,23 @@ core::Status ResolveDocument(const json::Value& core, const std::vector<ScreenSo
           return DHEPZ_ERR(core::ErrorCode::AlreadyExists,
                            L"duplicate UI route '" + route_id + L"'");
         }
-        resolved->routes_.push_back({route_id, BuildNode(core, item)});
+        Route route;
+        route.id = route_id;
+        route.root = BuildNode(core, item);
+        const std::wstring backdrop = item.StringField(L"backdrop");
+        if (!backdrop.empty()) {
+          if (backdrop.rfind(L"screen:", 0) == 0) {
+            route.backdrop_kind = Route::BackdropKind::Screen;
+            route.backdrop_value = backdrop.substr(7);
+          } else {
+            Rgba ignored;
+            route.backdrop_kind = resolved->Token(L"dark", backdrop, &ignored)
+                                      ? Route::BackdropKind::Color
+                                      : Route::BackdropKind::Image;
+            route.backdrop_value = backdrop;
+          }
+        }
+        resolved->routes_.push_back(std::move(route));
         return core::Ok();
       }
       const json::Value* children = item.ArrayField(L"children");
@@ -134,6 +204,13 @@ core::Status ResolveDocument(const json::Value& core, const std::vector<ScreenSo
   }
   if (resolved->routes_.empty()) {
     return DHEPZ_ERR(core::ErrorCode::NotFound, L"required UI route is missing");
+  }
+  for (const Route& route : resolved->routes_) {
+    if (route.backdrop_kind == Route::BackdropKind::Screen &&
+        (route.backdrop_value == route.id || resolved->FindRoute(route.backdrop_value) == nullptr)) {
+      return DHEPZ_ERR(core::ErrorCode::InvalidArgument,
+                       L"backdrop screen '" + route.backdrop_value + L"' is invalid");
+    }
   }
   if (!requested_initial_route.empty()) {
     if (resolved->FindRoute(requested_initial_route) == nullptr) {

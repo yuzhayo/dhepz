@@ -34,6 +34,8 @@ void FocusCoordinator::Clear() {
   index_ = kNoFocus;
 }
 
+void FocusCoordinator::Blur() { index_ = kNoFocus; }
+
 void FocusCoordinator::Rebuild(const layout::LayoutNode* tree) {
   const config::ComponentNode* previous = current();
   order_.clear();

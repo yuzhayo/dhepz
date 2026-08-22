@@ -1,5 +1,7 @@
 #include "ui/components/text/text_component.h"
 
+#include <algorithm>
+
 #include "ui/components/component_helpers.h"
 
 namespace ui::components {
@@ -9,7 +11,12 @@ render::Size Measure(const config::ComponentNode& node, render::RenderBackend& b
   const std::wstring binding = node.GetString(L"text_binding");
   const std::wstring text =
       binding.empty() ? node.GetString(L"text") : state.Text(binding, node.GetString(L"text"));
-  return backend.MeasureText(text, TextStyleFor(node), max_width);
+  render::Size measured = backend.MeasureText(text, TextStyleFor(node), max_width);
+  const long long width = node.GetInt(L"width");
+  const long long height = node.GetInt(L"height");
+  if (width > 0) measured.width = std::min(max_width, static_cast<float>(width));
+  if (height > 0) measured.height = static_cast<float>(height);
+  return measured;
 }
 
 void Paint(const config::ComponentNode& node, const render::Rect& bounds,

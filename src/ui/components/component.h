@@ -46,7 +46,7 @@ using TextInputFn = ComponentResult (*)(const config::ComponentNode&,
                                         const application::UiState&, wchar_t);
 using PointerFn = ComponentResult (*)(const config::ComponentNode&,
                                       const application::UiState&, render::Point,
-                                      const render::Rect&);
+                                      const render::Rect&, render::RenderBackend&);
 using WheelFn = ComponentResult (*)(const config::ComponentNode&,
                                     const application::UiState&, int);
 using OverlayPaintFn = void (*)(const config::ComponentNode&, const render::Rect&,
@@ -55,6 +55,12 @@ using OverlayPaintFn = void (*)(const config::ComponentNode&, const render::Rect
 using OverlayPointerFn = ComponentResult (*)(const config::ComponentNode&,
                                              const application::UiState&, render::Point,
                                              const render::Rect&, render::Size);
+using DoubleClickFn = ComponentResult (*)(const config::ComponentNode&,
+                                          const application::UiState&);
+using ContextMenuFn = ComponentResult (*)(const config::ComponentNode&,
+                                          const application::UiState&, void* owner_window);
+using HasOverlayFn = bool (*)(const config::ComponentNode&,
+                              const application::UiState&);
 
 struct ComponentDescriptor {
   std::wstring_view type;
@@ -69,6 +75,9 @@ struct ComponentDescriptor {
   WheelFn wheel = nullptr;
   OverlayPaintFn paint_overlay = nullptr;
   OverlayPointerFn overlay_pointer = nullptr;
+  DoubleClickFn double_click = nullptr;
+  ContextMenuFn context_menu = nullptr;
+  HasOverlayFn has_overlay = nullptr;
 };
 
 }  // namespace ui::components
