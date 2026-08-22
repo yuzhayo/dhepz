@@ -115,6 +115,7 @@ void TrayProcess::Shutdown() noexcept {
     icon.uID = kTrayIconId;
     Shell_NotifyIconW(NIM_DELETE, &icon);
     tray_icon_added_ = false;
+    modern_callback_ = false;
   }
   if (window_ != nullptr) {
     DestroyWindow(static_cast<HWND>(window_));
@@ -156,6 +157,7 @@ long long TrayProcess::HandleMessage(unsigned int message, unsigned long long wp
     // re-added or it stays gone until the next process start.
     if (tray_icon_added_) {
       tray_icon_added_ = false;
+      modern_callback_ = false;
       AddTrayIcon();
     }
     return 0;
@@ -189,12 +191,16 @@ void TrayProcess::HandleTrayCallback(unsigned long long wparam, long long lparam
   if (icon_id != 0 && icon_id != kTrayIconId) {
     return;
   }
-  if (event == WM_CONTEXTMENU || event == WM_RBUTTONUP) {
+  const bool context_requested =
+      modern_callback_ ? event == WM_CONTEXTMENU : event == WM_RBUTTONUP;
+  if (context_requested) {
     ShowMenu();
     return;
   }
-  if ((event == NIN_SELECT || event == NIN_KEYSELECT || event == WM_LBUTTONUP) &&
-      launch_handler_) {
+  const bool launch_requested = modern_callback_
+                                    ? event == NIN_SELECT || event == NIN_KEYSELECT
+                                    : event == WM_LBUTTONUP;
+  if (launch_requested && launch_handler_) {
     launch_handler_();
   }
 }
@@ -225,6 +231,7 @@ void TrayProcess::ShowMenu() {
 }
 
 void TrayProcess::AddTrayIcon() noexcept {
+  modern_callback_ = false;
   NOTIFYICONDATAW icon{};
   icon.cbSize = sizeof(icon);
   icon.hWnd = static_cast<HWND>(window_);
@@ -240,7 +247,7 @@ void TrayProcess::AddTrayIcon() noexcept {
   // After the add, not before: this call is what switches the callback to
   // the v4 layout and enables the modern NIN_* semantics.
   icon.uVersion = NOTIFYICON_VERSION_4;
-  Shell_NotifyIconW(NIM_SETVERSION, &icon);
+  modern_callback_ = Shell_NotifyIconW(NIM_SETVERSION, &icon) == TRUE;
   tray_icon_added_ = true;
 }
 

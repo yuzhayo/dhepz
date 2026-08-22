@@ -120,9 +120,11 @@
   <ItemGroup>
     <ClCompile Include="**\*.cpp" />
     <ClCompile Include="..\src\core\**\*.cpp" />
+    <ClCompile Include="..\src\parent\**\*.cpp" />
     <ClCompile Include="..\src\platform\**\*.cpp" />
     <ClCompile Include="..\src\render\**\*.cpp" />
-    <ClCompile Include="..\src\ui\shell\**\*.cpp" />
+    <ClCompile Include="..\src\ui\app_window\**\*.cpp" />
+    <ClCompile Include="..\src\ui\components\**\*.cpp" />
     <ClInclude Include="**\*.h" />
     <ResourceCompile Include="app_icon.rc" />
   </ItemGroup>

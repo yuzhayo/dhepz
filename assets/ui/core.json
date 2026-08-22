@@ -1,0 +1,246 @@
+{
+  "schema": "dhepz.ui.core",
+  "version": 1,
+  "tokens": {
+    "dark": {
+      "window": "#1E1E1E",
+      "surface": "#262626",
+      "surface_alt": "#323232",
+      "border": "#5A5A5A",
+      "text": "#EBEBEB",
+      "text_dim": "#A8A8A8",
+      "accent": "#60A5FA",
+      "danger": "#E81123",
+      "success": "#4AC48C",
+      "scrim": "#00000099"
+    }
+  },
+  "fonts": {
+    "ui": { "family": "Segoe UI" },
+    "mono": { "family": "Cascadia Mono" }
+  },
+  "spacing": {
+    "xs": 2,
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "xl": 16,
+    "xxl": 24
+  },
+  "common": {
+    "properties": {
+      "id": { "kind": "string" },
+      "style": { "kind": "string" },
+      "visible": { "kind": "bool", "default": true },
+      "enabled": { "kind": "bool", "default": true },
+      "accessible_name": { "kind": "string" },
+      "width": { "kind": "int" },
+      "height": { "kind": "int" },
+      "action": { "kind": "string" }
+    }
+  },
+  "allows_children": ["window", "screen", "container", "card", "dialog", "tabs"],
+  "components": {
+    "window": {
+      "properties": {
+        "title": { "kind": "text", "required": true },
+        "initial_route": { "kind": "string" },
+        "initial_width": { "kind": "int", "default": 760 },
+        "initial_height": { "kind": "int", "default": 520 },
+        "minimum_width": { "kind": "int", "default": 320 },
+        "minimum_height": { "kind": "int", "default": 200 },
+        "resizable": { "kind": "bool", "default": true }
+      }
+    },
+    "screen": {
+      "properties": {
+        "route_id": { "kind": "string", "required": true },
+        "tab_label": { "kind": "string" },
+        "show_in_tabs": { "kind": "bool", "default": true },
+        "backdrop": { "kind": "string" }
+      }
+    },
+    "container": {
+      "properties": {
+        "direction": {
+          "kind": "enum",
+          "values": ["row", "column", "grid", "flow"],
+          "default": "column"
+        },
+        "columns": { "kind": "int", "default": 2 },
+        "gap": { "kind": "int", "default": 8 },
+        "padding": { "kind": "object" },
+        "align": {
+          "kind": "enum",
+          "values": ["start", "center", "end", "stretch"],
+          "default": "stretch"
+        },
+        "justify": {
+          "kind": "enum",
+          "values": ["start", "center", "end", "space-between"],
+          "default": "start"
+        },
+        "wrap": { "kind": "bool", "default": false },
+        "overflow": {
+          "kind": "enum",
+          "values": ["visible", "clip", "scroll"],
+          "default": "visible"
+        },
+        "scroll_binding": { "kind": "binding" },
+        "scroll_maximum": { "kind": "int", "default": 0 }
+      }
+    },
+    "text": {
+      "properties": {
+        "text": { "kind": "text", "default": "" },
+        "text_binding": { "kind": "binding" },
+        "variant": {
+          "kind": "enum",
+          "values": ["body", "title", "caption", "monospace"],
+          "default": "body"
+        },
+        "wrap": { "kind": "bool", "default": true },
+        "selectable": { "kind": "bool", "default": false },
+        "align": {
+          "kind": "enum",
+          "values": ["start", "center", "end"],
+          "default": "start"
+        }
+      }
+    },
+    "button": {
+      "properties": {
+        "label": { "kind": "text", "required": true },
+        "action": { "kind": "string", "required": true },
+        "variant": {
+          "kind": "enum",
+          "values": ["default", "primary", "subtle", "danger", "navigation", "bookmark"],
+          "default": "default"
+        },
+        "selected_binding": { "kind": "binding" },
+        "press_selects": { "kind": "bool", "default": false },
+        "tab_stop": { "kind": "bool", "default": true }
+      }
+    },
+    "input": {
+      "properties": {
+        "value_binding": { "kind": "binding", "required": true },
+        "mode": {
+          "kind": "enum",
+          "values": ["single_line", "multiline"],
+          "default": "single_line"
+        },
+        "placeholder": { "kind": "string" },
+        "read_only": { "kind": "bool", "default": false },
+        "password": { "kind": "bool", "default": false },
+        "maximum_length": { "kind": "int", "default": 4096 },
+        "horizontal_align": {
+          "kind": "enum",
+          "values": ["start", "center", "end"],
+          "default": "start"
+        },
+        "scrollbar": {
+          "kind": "enum",
+          "values": ["auto", "never"],
+          "default": "auto"
+        },
+        "tab_stop": { "kind": "bool", "default": true }
+      }
+    },
+    "combo": {
+      "properties": {
+        "items_binding": { "kind": "binding", "required": true },
+        "selected_value_binding": { "kind": "binding", "required": true },
+        "placeholder": { "kind": "string" },
+        "maximum_visible_items": { "kind": "int", "default": 10 },
+        "popup_maximum_height": { "kind": "int", "default": 480 },
+        "allow_empty": { "kind": "bool", "default": true },
+        "tab_stop": { "kind": "bool", "default": true }
+      }
+    },
+    "checkbox": {
+      "properties": {
+        "label": { "kind": "text", "default": "" },
+        "checked_binding": { "kind": "binding", "required": true },
+        "tri_state": { "kind": "bool", "default": false },
+        "tab_stop": { "kind": "bool", "default": true }
+      }
+    },
+    "toggle": {
+      "properties": {
+        "label": { "kind": "text", "default": "" },
+        "checked_binding": { "kind": "binding", "required": true },
+        "variant": { "kind": "string", "default": "default" },
+        "tab_stop": { "kind": "bool", "default": true }
+      }
+    },
+    "card": {
+      "properties": {
+        "interactive": { "kind": "bool", "default": false },
+        "selected_binding": { "kind": "binding" },
+        "tab_stop": { "kind": "bool", "default": false },
+        "padding": { "kind": "object" },
+        "gap": { "kind": "int", "default": 8 }
+      }
+    },
+    "list": {
+      "properties": {
+        "items_binding": { "kind": "binding", "required": true },
+        "selected_id_binding": { "kind": "binding" },
+        "row_height": { "kind": "int", "default": 32 },
+        "overscan_rows": { "kind": "int", "default": 2 },
+        "selection": {
+          "kind": "enum",
+          "values": ["none", "single"],
+          "default": "single"
+        },
+        "empty_text": { "kind": "string", "default": "Tidak ada data" },
+        "scrollbar": {
+          "kind": "enum",
+          "values": ["auto", "never"],
+          "default": "auto"
+        },
+        "scroll_binding": { "kind": "binding" },
+        "tab_stop": { "kind": "bool", "default": true }
+      }
+    },
+    "scrollbar": {
+      "properties": {
+        "orientation": {
+          "kind": "enum",
+          "values": ["vertical", "horizontal"],
+          "default": "vertical"
+        },
+        "value_binding": { "kind": "binding", "required": true },
+        "minimum": { "kind": "int", "default": 0 },
+        "maximum": { "kind": "int", "default": 100 },
+        "thickness": { "kind": "int", "default": 12 },
+        "minimum_thumb_length": { "kind": "int", "default": 24 },
+        "line_step": { "kind": "int", "default": 1 },
+        "page_step": { "kind": "int", "default": 10 },
+        "tab_stop": { "kind": "bool", "default": true }
+      }
+    },
+    "dialog": {
+      "properties": {
+        "title": { "kind": "text", "default": "" },
+        "open_binding": { "kind": "binding", "required": true },
+        "width": { "kind": "int", "default": 480 },
+        "maximum_height": { "kind": "int", "default": 720 },
+        "dismiss_escape": { "kind": "bool", "default": true },
+        "dismiss_outside_click": { "kind": "bool", "default": false },
+        "dismiss_explicit_action": { "kind": "bool", "default": true },
+        "close_action": { "kind": "string" },
+        "padding": { "kind": "object" },
+        "gap": { "kind": "int", "default": 8 }
+      }
+    },
+    "tabs": {
+      "properties": {
+        "selected_binding": { "kind": "binding" },
+        "gap": { "kind": "int", "default": 4 },
+        "tab_stop": { "kind": "bool", "default": false }
+      }
+    }
+  }
+}

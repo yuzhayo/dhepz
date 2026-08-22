@@ -3,15 +3,18 @@
 #include "resource.h"
 #include "dhepz_version_generated.h"
 
-// The embedded UI JSON is added in a later phase (see issue #52).
-// VERSIONINFO is here from the start so the installed binary is identifiable
-// and the release workflow's version bump has something to move.
+// VERSIONINFO keeps the installed binary identifiable and gives the release
+// workflow's version bump one source of truth.
 //
 // NOTE: this file must stay LF-only. It will embed UI JSON verbatim via RCDATA,
 // and CRLF corrupts it.
 
 // First ICON statement becomes the EXE icon in Explorer.
 IDI_APP_ICON ICON "..\\assets\\app.ico"
+
+// Settings is a required core screen, not a drop-in feature module.
+IDR_UI_CORE_JSON RCDATA "..\\assets\\ui\\core.json"
+IDR_UI_SETTINGS_JSON RCDATA "..\\assets\\ui\\screens\\settings.json"
 
 1 VERSIONINFO
  FILEVERSION DHEPZ_VERSION_COMMA

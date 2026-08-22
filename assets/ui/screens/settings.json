@@ -1,0 +1,8 @@
+{
+  "components": [
+    {
+      "type": "screen",
+      "route_id": "settings"
+    }
+  ]
+}
