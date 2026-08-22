@@ -9,10 +9,22 @@
 namespace tray {
 namespace {
 
-constexpr wchar_t kClassName[] = L"dhepz.InfrastructureWindow";
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kExitCommand = 1;
+
+std::wstring ProcessStem() {
+  std::wstring path(32768, L'\0');
+  const DWORD length =
+      GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+  if (length == 0 || static_cast<std::size_t>(length) >= path.size()) return L"dhepz";
+  path.resize(length);
+  const std::size_t separator = path.find_last_of(L"\\/");
+  std::wstring name = separator == std::wstring::npos ? path : path.substr(separator + 1);
+  const std::size_t extension = name.find_last_of(L'.');
+  if (extension != std::wstring::npos) name.resize(extension);
+  return name.empty() ? std::wstring(L"dhepz") : name;
+}
 
 }  // namespace
 
@@ -22,6 +34,27 @@ TrayProcess::~TrayProcess() { Shutdown(); }
 
 StartResult TrayProcess::Start(void* instance) noexcept {
   instance_ = instance;
+  const std::wstring key = ProcessStem();
+  class_name_ = key + L".InfrastructureWindow";
+  launch_message_ = RegisterWindowMessageW((key + L".CreateWindow").c_str());
+  if (launch_message_ == 0) return StartResult::SingleInstanceFailed;
+
+  const std::wstring mutex_name = L"Local\\" + key + L".SingleInstance";
+  HANDLE mutex = CreateMutexW(nullptr, FALSE, mutex_name.c_str());
+  if (mutex == nullptr) return StartResult::SingleInstanceFailed;
+  if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    for (int attempt = 0; attempt < 100; ++attempt) {
+      const HWND owner = FindWindowW(class_name_.c_str(), nullptr);
+      if (owner != nullptr && PostMessageW(owner, launch_message_, 0, 0)) {
+        CloseHandle(mutex);
+        return StartResult::ExistingOwnerNotified;
+      }
+      Sleep(10);
+    }
+    CloseHandle(mutex);
+    return StartResult::ExistingOwnerNotificationFailed;
+  }
+  instance_mutex_ = mutex;
 
   WNDCLASSEXW window_class{};
   window_class.cbSize = sizeof(window_class);
@@ -29,7 +62,7 @@ StartResult TrayProcess::Start(void* instance) noexcept {
   // are spelled out because the header keeps windows.h out.
   window_class.lpfnWndProc = reinterpret_cast<WNDPROC>(&TrayProcess::WindowProcedure);
   window_class.hInstance = static_cast<HINSTANCE>(instance);
-  window_class.lpszClassName = kClassName;
+  window_class.lpszClassName = class_name_.c_str();
   if (!RegisterClassExW(&window_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
     return StartResult::WindowClassFailed;
   }
@@ -42,8 +75,8 @@ StartResult TrayProcess::Start(void* instance) noexcept {
   // A real top-level WS_POPUP, never HWND_MESSAGE: message-only windows do
   // not receive the TaskbarCreated broadcast, and the tray icon would be
   // lost forever after an Explorer restart. See the header.
-  window_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kClassName, nullptr, WS_POPUP,
-                            0, 0, 0, 0, nullptr, nullptr,
+  window_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, class_name_.c_str(), nullptr,
+                            WS_POPUP, 0, 0, 0, 0, nullptr, nullptr,
                             static_cast<HINSTANCE>(instance), this);
   if (window_ == nullptr) {
     return StartResult::WindowCreateFailed;
@@ -59,8 +92,8 @@ bool TrayProcess::InstallTray() noexcept {
   return tray_icon_added_;
 }
 
-void TrayProcess::set_activate_handler(std::function<void()> handler) {
-  activate_handler_ = std::move(handler);
+void TrayProcess::set_launch_handler(std::function<void()> handler) {
+  launch_handler_ = std::move(handler);
 }
 
 int TrayProcess::Run() noexcept {
@@ -87,6 +120,10 @@ void TrayProcess::Shutdown() noexcept {
     DestroyWindow(static_cast<HWND>(window_));
     window_ = nullptr;
   }
+  if (instance_mutex_ != nullptr) {
+    CloseHandle(static_cast<HANDLE>(instance_mutex_));
+    instance_mutex_ = nullptr;
+  }
 }
 
 long long __stdcall TrayProcess::WindowProcedure(void* window, unsigned int message,
@@ -110,6 +147,10 @@ long long __stdcall TrayProcess::WindowProcedure(void* window, unsigned int mess
 long long TrayProcess::HandleMessage(unsigned int message, unsigned long long wparam,
                                      long long lparam) {
   HWND hwnd = static_cast<HWND>(window_);
+  if (launch_message_ != 0 && message == launch_message_) {
+    if (launch_handler_) launch_handler_();
+    return 0;
+  }
   if (taskbar_created_message_ != 0 && message == taskbar_created_message_) {
     // Explorer came back: its icon list is empty, so the icon must be
     // re-added or it stays gone until the next process start.
@@ -153,8 +194,8 @@ void TrayProcess::HandleTrayCallback(unsigned long long wparam, long long lparam
     return;
   }
   if ((event == NIN_SELECT || event == NIN_KEYSELECT || event == WM_LBUTTONUP) &&
-      activate_handler_) {
-    activate_handler_();
+      launch_handler_) {
+    launch_handler_();
   }
 }
 

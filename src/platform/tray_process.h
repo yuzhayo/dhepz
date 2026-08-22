@@ -19,6 +19,7 @@
 #pragma once
 
 #include <functional>
+#include <string>
 
 namespace trace {
 class PerformanceTraceSession;
@@ -30,6 +31,9 @@ namespace tray {
 // of dying silently (G5). Success is 0.
 enum class StartResult {
   Ok,
+  ExistingOwnerNotified,
+  SingleInstanceFailed,
+  ExistingOwnerNotificationFailed,
   WindowClassFailed,
   WindowCreateFailed,
   TaskbarMessageFailed,
@@ -56,9 +60,9 @@ class TrayProcess final {
   // shell refuses (a headless session): the process stays up without a tray.
   bool InstallTray() noexcept;
 
-  // The shell owns what activation means. At P2 this only shows the empty
-  // parent window; feature routing does not belong in the tray process.
-  void set_activate_handler(std::function<void()> handler);
+  // A launch request asks the resident owner to create another window.
+  // Window ownership and feature routing do not belong in TrayProcess.
+  void set_launch_handler(std::function<void()> handler);
 
   // Blocks in GetMessageW until Exit. No timers, no polling, no idle work.
   int Run() noexcept;
@@ -83,9 +87,12 @@ class TrayProcess final {
 
   void* instance_ = nullptr;
   void* window_ = nullptr;
+  void* instance_mutex_ = nullptr;
+  std::wstring class_name_;
+  unsigned int launch_message_ = 0;
   unsigned int taskbar_created_message_ = 0;
   bool tray_icon_added_ = false;
-  std::function<void()> activate_handler_;
+  std::function<void()> launch_handler_;
 };
 
 }  // namespace tray

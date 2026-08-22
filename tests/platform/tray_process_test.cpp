@@ -2,7 +2,27 @@
 
 #include <windows.h>
 
+#include <chrono>
+#include <thread>
+
 #include "framework/test_case.h"
+
+namespace {
+
+void PumpFor(int milliseconds) {
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(milliseconds);
+  while (std::chrono::steady_clock::now() < deadline) {
+    MSG message{};
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+}
+
+}  // namespace
 
 // The criterion that used to cost the old build a real bug: the
 // infrastructure window must be a real top-level WS_POPUP with
@@ -46,4 +66,18 @@ DHEPZ_TEST(TrayProcess, TrayInstallIsHonestAboutItsEnvironment) {
 
   process.Shutdown();
   DHEPZ_CHECK_FALSE(process.tray_installed());
+}
+
+DHEPZ_TEST(TrayProcess, SecondLaunchRequestsAnotherWindowFromTheOwner) {
+  tray::TrayProcess owner;
+  DHEPZ_CHECK(owner.Start(GetModuleHandleW(nullptr)) == tray::StartResult::Ok);
+  bool launch_requested = false;
+  owner.set_launch_handler([&launch_requested] { launch_requested = true; });
+
+  tray::TrayProcess second;
+  DHEPZ_CHECK(second.Start(GetModuleHandleW(nullptr)) ==
+              tray::StartResult::ExistingOwnerNotified);
+  DHEPZ_CHECK(second.window() == nullptr);
+  PumpFor(20);
+  DHEPZ_CHECK(launch_requested);
 }

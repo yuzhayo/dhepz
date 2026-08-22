@@ -55,14 +55,20 @@ DHEPZ_TEST(AppWindow, ShowRendersBeforeVisibleAndHideReleases) {
   DHEPZ_CHECK(window.backend()->buffer_width() > 0);
 }
 
-DHEPZ_TEST(AppWindow, CloseReturnsToResidentNotExit) {
+DHEPZ_TEST(AppWindow, CloseDestroysWindowAndAllowsRecreation) {
   shell::AppWindow window;
   DHEPZ_CHECK(window.Create(TestInstance(), 320.0f, 240.0f));
   window.Show();
   window.Close();
   DHEPZ_CHECK_FALSE(window.visible());
-  DHEPZ_CHECK(window.alive());
+  DHEPZ_CHECK_FALSE(window.alive());
   DHEPZ_CHECK_EQ(window.backend()->buffer_width(), 0);
+
+  DHEPZ_CHECK(window.Create(TestInstance(), 320.0f, 240.0f));
+  window.Show();
+  DHEPZ_CHECK(window.alive());
+  DHEPZ_CHECK(window.visible());
+  DHEPZ_CHECK(window.backend()->buffer_width() > 0);
 }
 
 DHEPZ_TEST(AppWindow, HundredHideShowCyclesStayFlat) {
