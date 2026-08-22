@@ -14,6 +14,7 @@
 #include "platform/performance_trace.h"
 #include "platform/tray_process.h"
 #include "ui/config/resolved_ui_document.h"
+#include "ui/shell/app_window/app_window.h"
 
 // Phase 0's tray-resident process: one hidden infrastructure window and one
 // tray icon, no UI, no config, no modules. This is the thing whose idle
@@ -137,7 +138,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   // and the process must still run (CI, automated runs).
   tray_process.InstallTray();
 
+  // P2 production surface: visible custom chrome with an intentionally empty
+  // content area. Screen presentation and feature logic start in P3.
+  shell::AppWindow app_window;
+  if (!app_window.Create(instance, 400.0f, 360.0f)) {
+    tray_process.Shutdown();
+    BootstrapFailed(13, L"The application window could not be created.");
+  }
+  // P2 exposes the chrome seam for visual review. P3 replaces this inert
+  // callback with Settings screen navigation.
+  app_window.set_settings_handler([] {});
+  tray_process.set_activate_handler([&app_window] { app_window.Show(); });
+  app_window.Show();
+
   const int result = tray_process.Run();
+  app_window.Destroy();
   tray_process.Shutdown();
   return result;
 }
