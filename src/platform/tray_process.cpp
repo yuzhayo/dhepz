@@ -59,6 +59,10 @@ bool TrayProcess::InstallTray() noexcept {
   return tray_icon_added_;
 }
 
+void TrayProcess::set_activate_handler(std::function<void()> handler) {
+  activate_handler_ = std::move(handler);
+}
+
 int TrayProcess::Run() noexcept {
   MSG message{};
   // Blocks in GetMessageW. No timers, no polling, no idle processing: the
@@ -148,8 +152,10 @@ void TrayProcess::HandleTrayCallback(unsigned long long wparam, long long lparam
     ShowMenu();
     return;
   }
-  // NIN_SELECT / NIN_KEYSELECT / WM_LBUTTONUP will activate the main window
-  // once one exists; the tray-only process has nothing to show yet.
+  if ((event == NIN_SELECT || event == NIN_KEYSELECT || event == WM_LBUTTONUP) &&
+      activate_handler_) {
+    activate_handler_();
+  }
 }
 
 void TrayProcess::ShowMenu() {

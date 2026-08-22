@@ -6,7 +6,7 @@
 #include <thread>
 
 #include "framework/test_case.h"
-#include "ui/shell/app_window.h"
+#include "ui/shell/app_window/app_window.h"
 
 namespace {
 

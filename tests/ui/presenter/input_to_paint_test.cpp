@@ -10,7 +10,7 @@
 
 #include "framework/test_case.h"
 #include "ui/config/resolved_ui_document.h"
-#include "ui/shell/app_window.h"
+#include "ui/shell/app_window/app_window.h"
 
 namespace {
 

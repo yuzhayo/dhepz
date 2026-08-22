@@ -1,4 +1,4 @@
-#include "ui/shell/app_window.h"
+#include "ui/shell/app_window/app_window.h"
 
 #include <windows.h>
 #include <psapi.h>
@@ -15,7 +15,7 @@ namespace {
 void* TestInstance() { return GetModuleHandleW(nullptr); }
 
 // The shell runs on a message loop in the real app; tests pump briefly when
-// a step posts messages (minimise, resize).
+// a step posts resize messages.
 void PumpFor(int milliseconds) {
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(milliseconds);
@@ -63,22 +63,6 @@ DHEPZ_TEST(AppWindow, CloseReturnsToResidentNotExit) {
   DHEPZ_CHECK_FALSE(window.visible());
   DHEPZ_CHECK(window.alive());
   DHEPZ_CHECK_EQ(window.backend()->buffer_width(), 0);
-}
-
-DHEPZ_TEST(AppWindow, MinimiseReleasesAndRestoreRebuilds) {
-  shell::AppWindow window;
-  DHEPZ_CHECK(window.Create(TestInstance(), 320.0f, 240.0f));
-  window.Show();
-  PumpFor(30);
-
-  ShowWindow(static_cast<HWND>(window.hwnd()), SW_MINIMIZE);
-  PumpFor(60);
-  DHEPZ_CHECK_EQ(window.backend()->buffer_width(), 0);
-
-  ShowWindow(static_cast<HWND>(window.hwnd()), SW_RESTORE);
-  PumpFor(60);
-  DHEPZ_CHECK(window.visible());
-  DHEPZ_CHECK(window.backend()->buffer_width() > 0);
 }
 
 DHEPZ_TEST(AppWindow, HundredHideShowCyclesStayFlat) {
@@ -301,22 +285,22 @@ DHEPZ_TEST(AppWindow, SettingsButtonAppearsOnlyWithHandler) {
   const HWND hwnd = static_cast<HWND>(window.hwnd());
 
   // Client geometry at 96 DPI: margin 24, content_right 984, button 46 px.
-  // Order left-to-right: pin, [settings], min, max, close.
+  // Order left-to-right: pin, [settings], close.
   bool opened = false;
-  // No handler: four buttons, the pin occupies x 800..846; the future gear
-  // slot (x 754..800) is plain caption — clicking it does nothing.
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(770, 40));
+  // No handler: two buttons, the pin occupies x 892..938; the future gear
+  // slot (x 846..892) is plain caption — clicking it does nothing.
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(870, 40));
   DHEPZ_CHECK_FALSE(opened);
   DHEPZ_CHECK_FALSE(window.pinned());
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(910, 40));
   DHEPZ_CHECK(window.pinned());
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(910, 40));
   DHEPZ_CHECK_FALSE(window.pinned());
 
   window.set_settings_handler([&opened] { opened = true; });
-  // The gear now takes x 800..846 and the pin shifts left to 754..800.
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(820, 40));
+  // The gear now takes x 892..938 and the pin shifts left to 846..892.
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(910, 40));
   DHEPZ_CHECK(opened);
-  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(770, 40));
+  SendMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(870, 40));
   DHEPZ_CHECK(window.pinned());
 }

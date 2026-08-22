@@ -4,11 +4,11 @@
 //
 // The lifecycle rules, because they are the point of this file:
 //
-//   - Hide (or minimise, or close): the back buffer and every window-scoped
+//   - Hide (or close): the back buffer and every window-scoped
 //     resource are released. The buffer is the one large allocation and it
 //     scales with window size; keeping it while hidden is the drift G1
 //     forbids.
-//   - Show/restore: a full frame is rendered offscreen BEFORE ShowWindow,
+//   - Show: a full frame is rendered offscreen BEFORE ShowWindow,
 //     so the window never appears empty and then fills in.
 //   - Close hides. The process stays tray-resident; it does not exit. Exit
 //     belongs to the tray menu.
@@ -64,11 +64,10 @@ class AppWindow final {
 
   bool alive() const { return hwnd_ != nullptr; }
   bool visible() const;
-  bool maximized() const { return maximized_; }
   void* hwnd() const { return hwnd_; }
   render::GdiBackend* backend() { return &backend_; }
 
-  // Always-on-top pin: a caption button left of minimise toggles this. The
+  // Always-on-top pin: the left caption button toggles this. The
   // state is session-only — persistence belongs to the settings module.
   void TogglePin();
   bool pinned() const { return pinned_; }
@@ -116,12 +115,10 @@ class AppWindow final {
 
   void RenderFullFrame();
   void PaintContent();
-  void SetMaximized(bool maximize);
   int Px(float logical) const;
   float Logical(int px) const;
   // Caption buttons left-to-right: pin, settings (only while a settings
-  // handler is registered), min, max/restore, close. Returns the
-  // left-to-right index or -1.
+  // handler is registered), close. Returns the left-to-right index or -1.
   int ButtonAt(int x_px, int y_px) const;
   int ButtonCount() const;
 
@@ -139,10 +136,7 @@ class AppWindow final {
   std::uint32_t last_os_signals_ = 0;
   unsigned int drain_message_ = 0;
   float dpi_ = 96.0f;
-  bool maximized_ = false;
   bool pinned_ = false;
-  int restored_width_px_ = 0;
-  int restored_height_px_ = 0;
   int hover_button_ = -1;
   std::wstring title_ = L"dhepz";
 };
