@@ -4,6 +4,8 @@
 #include <utility>
 #include <windows.h>
 
+#include "ui/components/component_helpers.h"
+
 namespace ui::presenter {
 
 ScreenPresenter::ScreenPresenter(render::RenderBackend* backend, application::UiState* state,
@@ -110,7 +112,8 @@ void ScreenPresenter::PaintNode(const layout::LayoutNode& node) {
     visual.hovered = node.source == hovered_;
     visual.pressed = node.source == pressed_;
     visual.focused = node.source == focus_.current();
-    visual.enabled = node.source->GetBool(L"enabled", true);
+    visual.enabled = components::BoundBool(*node.source, L"enabled_binding", *state_,
+                                           node.source->GetBool(L"enabled", true));
     descriptor->paint(*node.source, node.bounds, visual, palette_, *state_, *backend_);
   }
   if (node.clip_children) backend_->PushClip(node.bounds);
@@ -125,7 +128,9 @@ const layout::LayoutNode* ScreenPresenter::Hit(const layout::LayoutNode& node, f
   for (auto child = node.children.rbegin(); child != node.children.rend(); ++child) {
     if (const layout::LayoutNode* hit = Hit(*child, x, y)) return hit;
   }
-  if (!node.bounds.contains({x, y}) || !node.source->GetBool(L"enabled", true)) return nullptr;
+  if (!node.bounds.contains({x, y}) ||
+      !components::BoundBool(*node.source, L"enabled_binding", *state_,
+                             node.source->GetBool(L"enabled", true))) return nullptr;
   const components::ComponentDescriptor* descriptor = registry_.Find(node.source->type());
   if (descriptor == nullptr) return nullptr;
   const bool focusable = descriptor->can_focus != nullptr && descriptor->can_focus(*node.source);

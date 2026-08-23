@@ -17,12 +17,17 @@ namespace worker {
 class Worker;
 }
 
+namespace modules {
+class ModuleStateStore;
+}
+
 namespace orchestrator {
 
 class ModuleHostAdapter final : public modules::ModuleHost,
                                 public modules::BackgroundCapabilities {
  public:
-  ModuleHostAdapter(shell::AppWindow* window, ui::containers::ParentUi* parent);
+  ModuleHostAdapter(shell::AppWindow* window, ui::containers::ParentUi* parent,
+                    modules::ModuleStateStore* state_store);
   ~ModuleHostAdapter() override;
 
   ModuleHostAdapter(const ModuleHostAdapter&) = delete;
@@ -34,6 +39,7 @@ class ModuleHostAdapter final : public modules::ModuleHost,
   void Shutdown();
 
   std::wstring DefaultDirectory() const override;
+  ui::application::UiPatch RestoredState(std::wstring_view prefix) const override;
   std::optional<std::wstring> PickFolder(std::wstring_view initial_path) override;
   void RunBackground(modules::BackgroundWork work,
                      modules::BackgroundComplete complete) override;
@@ -45,10 +51,12 @@ class ModuleHostAdapter final : public modules::ModuleHost,
   core::Status StartProcess(const modules::ProcessRequest& request) const override;
   core::Status RunProcess(const modules::ProcessRequest& request,
                           std::wstring* standard_output) const override;
+  core::Status PersistState(const ui::application::UiPatch& patch) const override;
 
  private:
   shell::AppWindow* window_ = nullptr;
   ui::containers::ParentUi* parent_ = nullptr;
+  modules::ModuleStateStore* state_store_ = nullptr;
   std::unique_ptr<worker::Worker> worker_;
   unsigned int completion_message_ = 0;
   std::uint64_t generation_ = 0;

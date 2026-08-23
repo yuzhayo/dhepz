@@ -5,6 +5,7 @@
 #include "parent/ui/contracts/ui_action_registry.h"
 #include "parent/ui/runtime/parent_ui.h"
 #include "ui/app_window/app_window.h"
+#include "ui/settings/settings_update_controller.h"
 
 namespace ui::settings {
 
@@ -28,6 +29,7 @@ class SettingsWindow final {
   application::UiActionRegistry actions_;
   shell::AppWindow window_;
   containers::ParentUi parent_ui_;
+  SettingsUpdateController updater_;
 };
 
 }  // namespace ui::settings

@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include "parent/ui/runtime/parent_ui.h"
+#include "parent/logic/module_state_store.h"
 #include "platform/folder_picker.h"
 #include "platform/paths.h"
 #include "platform/process.h"
@@ -12,8 +13,9 @@
 namespace orchestrator {
 
 ModuleHostAdapter::ModuleHostAdapter(shell::AppWindow* window,
-                                     ui::containers::ParentUi* parent)
-    : window_(window), parent_(parent) {}
+                                     ui::containers::ParentUi* parent,
+                                     modules::ModuleStateStore* state_store)
+    : window_(window), parent_(parent), state_store_(state_store) {}
 
 ModuleHostAdapter::~ModuleHostAdapter() { Shutdown(); }
 
@@ -73,6 +75,11 @@ void ModuleHostAdapter::Shutdown() {
 
 std::wstring ModuleHostAdapter::DefaultDirectory() const { return paths::ExecutableDir(); }
 
+ui::application::UiPatch ModuleHostAdapter::RestoredState(std::wstring_view prefix) const {
+  return state_store_ != nullptr ? state_store_->Restore(prefix)
+                                 : ui::application::UiPatch{};
+}
+
 std::optional<std::wstring> ModuleHostAdapter::PickFolder(std::wstring_view initial_path) {
   return folder_picker::Pick(window_ != nullptr ? window_->hwnd() : nullptr, initial_path);
 }
@@ -116,6 +123,12 @@ core::Status ModuleHostAdapter::StartProcess(const modules::ProcessRequest& requ
 core::Status ModuleHostAdapter::RunProcess(const modules::ProcessRequest& request,
                                            std::wstring* standard_output) const {
   return process::Run(request, standard_output);
+}
+
+core::Status ModuleHostAdapter::PersistState(const ui::application::UiPatch& patch) const {
+  return state_store_ != nullptr
+             ? state_store_->Save(patch)
+             : DHEPZ_ERR(core::ErrorCode::Internal, L"Module state store is unavailable");
 }
 
 }  // namespace orchestrator

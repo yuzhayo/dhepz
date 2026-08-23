@@ -246,8 +246,9 @@ core::Status Launch(const BackgroundCapabilities& capabilities, LaunchKind kind,
 class TerminalController final : public ModuleController {
  public:
   ui::application::UiPatch InitialState(const ModuleHost& host) const override {
-    ui::application::UiPatch patch;
     const std::wstring default_directory = host.DefaultDirectory();
+    ui::application::UiState state;
+    ui::application::UiPatch patch;
     Add(&patch, L"terminal.path", default_directory);
     Add(&patch, L"terminal.recent_paths",
         default_directory.empty() ? std::vector<std::wstring>{}
@@ -255,6 +256,11 @@ class TerminalController final : public ModuleController {
     Add(&patch, L"terminal.venv", false);
     Add(&patch, L"terminal.status", std::wstring{});
     Add(&patch, L"terminal.busy", false);
+    (void)state.Apply(patch);
+    (void)state.Apply(host.RestoredState(L"terminal."));
+    const std::wstring restored_path = state.Text(L"terminal.path", default_directory);
+    Add(&patch, L"terminal.path", restored_path);
+    Add(&patch, L"terminal.recent_paths", RecentPaths(state, restored_path));
     return patch;
   }
 
@@ -292,6 +298,7 @@ class TerminalController final : public ModuleController {
     return actions->Register(std::move(action), [this, kind](const auto&, const auto& state) {
       const std::wstring path = state.Text(L"terminal.path");
       const bool prepare_venv = state.Bool(L"terminal.venv");
+      const std::vector<std::wstring> recent_paths = RecentPaths(state, path);
       CancelPendingVenv();
       std::shared_ptr<std::atomic<bool>> request_cancelled;
       if (prepare_venv) {
@@ -299,11 +306,15 @@ class TerminalController final : public ModuleController {
         pending_venv_ = request_cancelled;
       }
       host_->RunBackground(
-          [kind, path, prepare_venv, request_cancelled](
+          [kind, path, prepare_venv, recent_paths, request_cancelled](
               const BackgroundCapabilities& capabilities,
               const std::atomic<bool>& cancelled) {
-            return Launch(capabilities, kind, path, prepare_venv, cancelled,
-                          request_cancelled.get());
+            DHEPZ_RETURN_IF_ERROR(Launch(capabilities, kind, path, prepare_venv,
+                                         cancelled, request_cancelled.get()));
+            ui::application::UiPatch persisted;
+            Add(&persisted, L"terminal.path", path);
+            Add(&persisted, L"terminal.recent_paths", recent_paths);
+            return capabilities.PersistState(persisted);
           },
           [this, request_cancelled](const core::Status& status) {
             if (request_cancelled != nullptr && request_cancelled->load()) return;
@@ -316,7 +327,7 @@ class TerminalController final : public ModuleController {
           });
       ui::application::UiPatch pending;
       Add(&pending, L"terminal.busy", true);
-      Add(&pending, L"terminal.recent_paths", RecentPaths(state, path));
+      Add(&pending, L"terminal.recent_paths", recent_paths);
       Add(&pending, L"terminal.status",
           prepare_venv ? std::wstring(L"Checking Python venv...")
                        : std::wstring(L"Opening terminal..."));

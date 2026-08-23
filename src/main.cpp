@@ -8,6 +8,7 @@
 #include "orchestrator/window_orchestrator.h"
 #include "parent/logic/module_registry.h"
 #include "platform/performance_trace.h"
+#include "platform/app_update_service.h"
 #include "platform/tray_process.h"
 #include "parent/ui/config/embedded_settings_loader.h"
 
@@ -38,6 +39,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   UNREFERENCED_PARAMETER(previous);
   UNREFERENCED_PARAMETER(command_line);
   UNREFERENCED_PARAMETER(show_command);
+
+  update::RunVelopackStartup();
 
   static_assert(dhepz::version::kMajor >= 0,
                 "version.props must reach the compiler as defines");

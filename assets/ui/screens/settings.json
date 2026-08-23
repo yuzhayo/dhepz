@@ -2,7 +2,85 @@
   "components": [
     {
       "type": "screen",
-      "route_id": "settings"
+      "route_id": "settings",
+      "show_in_tabs": false,
+      "children": [
+        {
+          "type": "container",
+          "direction": "column",
+          "padding": { "top": 10, "right": 10, "bottom": 10, "left": 10 },
+          "gap": 10,
+          "children": [
+            {
+              "type": "card",
+              "interactive": false,
+              "height": 88,
+              "direction": "row",
+              "align": "center",
+              "padding": { "top": 8, "right": 8, "bottom": 8, "left": 8 },
+              "gap": 10,
+              "children": [
+                {
+                  "type": "container",
+                  "direction": "column",
+                  "width": 260,
+                  "gap": 3,
+                  "children": [
+                    {
+                      "type": "text",
+                      "text": "Updates",
+                      "variant": "title",
+                      "height": 24
+                    },
+                    {
+                      "type": "text",
+                      "text": "Version 0.0.0",
+                      "text_binding": "settings.update.version",
+                      "variant": "caption",
+                      "height": 14
+                    },
+                    {
+                      "type": "text",
+                      "text": "Siap memeriksa pembaruan.",
+                      "text_binding": "settings.update.status",
+                      "variant": "caption",
+                      "height": 28
+                    }
+                  ]
+                },
+                {
+                  "type": "container",
+                  "direction": "column",
+                  "justify": "center",
+                  "width": 80,
+                  "gap": 6,
+                  "children": [
+                    {
+                      "type": "button",
+                      "id": "check-update",
+                      "label": "Check now",
+                      "action": "settings.update.check",
+                      "enabled_binding": "settings.update.can_check",
+                      "height": 32
+                    },
+                    {
+                      "type": "button",
+                      "id": "install-update",
+                      "label": "Update & Restart",
+                      "label_binding": "settings.update.install_label",
+                      "action": "settings.update.install",
+                      "variant": "primary",
+                      "visible_binding": "settings.update.available",
+                      "enabled_binding": "settings.update.can_install",
+                      "height": 32
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
