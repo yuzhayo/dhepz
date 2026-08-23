@@ -32,7 +32,9 @@
       "id": { "kind": "string" },
       "style": { "kind": "string" },
       "visible": { "kind": "bool", "default": true },
+      "visible_binding": { "kind": "binding" },
       "enabled": { "kind": "bool", "default": true },
+      "enabled_binding": { "kind": "binding" },
       "accessible_name": { "kind": "string" },
       "width": { "kind": "int" },
       "height": { "kind": "int" },
@@ -116,6 +118,7 @@
     "button": {
       "properties": {
         "label": { "kind": "text", "required": true },
+        "label_binding": { "kind": "binding" },
         "action": { "kind": "string", "required": true },
         "variant": {
           "kind": "enum",
@@ -188,6 +191,21 @@
         "interactive": { "kind": "bool", "default": false },
         "selected_binding": { "kind": "binding" },
         "tab_stop": { "kind": "bool", "default": false },
+        "direction": {
+          "kind": "enum",
+          "values": ["row", "column", "grid", "flow"],
+          "default": "column"
+        },
+        "align": {
+          "kind": "enum",
+          "values": ["start", "center", "end", "stretch"],
+          "default": "stretch"
+        },
+        "justify": {
+          "kind": "enum",
+          "values": ["start", "center", "end", "space-between"],
+          "default": "start"
+        },
         "padding": { "kind": "object" },
         "gap": { "kind": "int", "default": 8 }
       }

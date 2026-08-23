@@ -7,10 +7,12 @@
 #include "core/status.h"
 #include "orchestrator/module_host.h"
 #include "parent/logic/module_contract.h"
+#include "parent/logic/module_state_store.h"
 #include "parent/ui/contracts/ui_action_registry.h"
 #include "parent/ui/runtime/parent_ui.h"
 #include "ui/app_window/app_window.h"
 #include "ui/settings/settings_window.h"
+#include "platform/paths.h"
 
 namespace orchestrator {
 
@@ -35,7 +37,11 @@ WindowOrchestrator::WindowOrchestrator(
     : instance_(instance),
       settings_document_(settings_document),
       feature_document_(feature_document),
-      feature_(feature) {}
+      feature_(feature),
+      state_store_(std::make_unique<modules::ModuleStateStore>(
+          paths::Join(paths::StateDir(), L"settings.json"))) {
+  (void)state_store_->Load();
+}
 
 WindowOrchestrator::~WindowOrchestrator() { CloseAll(); }
 
@@ -50,7 +56,8 @@ bool WindowOrchestrator::OpenWindow() {
 
   auto item = std::make_unique<WindowSession>();
   if (!item->window.Create(instance_, 400.0f, 360.0f)) return false;
-  item->host = std::make_unique<ModuleHostAdapter>(&item->window, &item->parent_ui);
+  item->host = std::make_unique<ModuleHostAdapter>(&item->window, &item->parent_ui,
+                                                   state_store_.get());
   if (!item->host->Start().ok()) return false;
   item->module = feature_->create();
   if (item->module == nullptr) return false;

@@ -8,6 +8,7 @@ class ResolvedUiDocument;
 }
 
 namespace modules {
+class ModuleStateStore;
 struct ModuleDescriptor;
 }
 
@@ -35,6 +36,7 @@ class WindowOrchestrator final {
   const ui::config::ResolvedUiDocument* settings_document_ = nullptr;
   const ui::config::ResolvedUiDocument* feature_document_ = nullptr;
   const modules::ModuleDescriptor* feature_ = nullptr;
+  std::unique_ptr<modules::ModuleStateStore> state_store_;
   std::vector<std::unique_ptr<WindowSession>> windows_;
 };
 

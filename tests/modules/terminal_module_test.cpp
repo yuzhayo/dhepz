@@ -13,6 +13,7 @@
 #include "parent/ui/config/resolved_ui_document.h"
 #include "parent/ui/contracts/ui_state.h"
 #include "platform/files.h"
+#include "ui/components/input/input_component.h"
 
 namespace {
 
@@ -32,6 +33,10 @@ class FakeHost final : public modules::ModuleHost,
                        public modules::BackgroundCapabilities {
  public:
   std::wstring DefaultDirectory() const override { return L"C:\\work"; }
+
+  ui::application::UiPatch RestoredState(std::wstring_view) const override {
+    return restored_;
+  }
 
   std::optional<std::wstring> PickFolder(std::wstring_view) override {
     return L"C:\\picked";
@@ -74,6 +79,11 @@ class FakeHost final : public modules::ModuleHost,
     return core::Ok();
   }
 
+  core::Status PersistState(const ui::application::UiPatch& patch) const override {
+    persisted_.push_back(patch);
+    return core::Ok();
+  }
+
   void Complete() {
     if (pending_complete_) pending_complete_(pending_status_);
     pending_complete_ = {};
@@ -82,6 +92,8 @@ class FakeHost final : public modules::ModuleHost,
   mutable std::vector<modules::ProcessRequest> started_;
   mutable std::vector<modules::ProcessRequest> ran_;
   std::vector<ui::application::UiPatch> published_;
+  ui::application::UiPatch restored_;
+  mutable std::vector<ui::application::UiPatch> persisted_;
   core::Status start_status_;
   int close_if_unpinned_requests_ = 0;
 
@@ -216,4 +228,46 @@ DHEPZ_TEST(P4Terminal, SuccessfulLaunchClosesOnlyThroughTheParentRequest) {
   DHEPZ_CHECK(failed_state.Apply(failed_actions.Dispatch(launch, failed_state)));
   failed_host.Complete();
   DHEPZ_CHECK_EQ(failed_host.close_if_unpinned_requests_, 0);
+}
+
+DHEPZ_TEST(P4Terminal, RestoresAndPersistsPathHistoryForTheInputDropdown) {
+  const modules::ModuleDescriptor* descriptor = modules::ModuleRegistry::Find(L"terminal");
+  DHEPZ_CHECK(descriptor != nullptr);
+  std::unique_ptr<modules::ModuleController> controller = descriptor->create();
+  DHEPZ_CHECK(controller != nullptr);
+
+  FakeHost host;
+  host.restored_.changes.push_back({L"terminal.path", std::wstring(L"C:\\saved")});
+  host.restored_.changes.push_back(
+      {L"terminal.recent_paths",
+       std::vector<std::wstring>{L"C:\\saved", L"D:\\previous"}});
+  ui::application::UiState state;
+  DHEPZ_CHECK(state.Apply(controller->InitialState(host)));
+  DHEPZ_CHECK_EQ(state.Text(L"terminal.path"), std::wstring(L"C:\\saved"));
+  const std::vector<std::wstring>* restored = state.Strings(L"terminal.recent_paths");
+  DHEPZ_CHECK(restored != nullptr);
+  DHEPZ_CHECK_EQ(restored->size(), static_cast<std::size_t>(2));
+
+  ui::config::ComponentNode input(L"input", L"terminal-path");
+  input.SetProperty(L"suggestions_binding",
+                    json::Value::String(L"terminal.recent_paths"));
+  const ui::components::ComponentDescriptor descriptor_component =
+      ui::components::CreateInputComponent();
+  DHEPZ_CHECK(descriptor_component.has_overlay != nullptr);
+  DHEPZ_CHECK(descriptor_component.has_overlay(input, state));
+
+  ui::application::UiActionRegistry actions;
+  DHEPZ_CHECK(controller->Bind(&host, &actions).ok());
+  state.Set(L"terminal.path", std::wstring(L"E:\\next"));
+  ui::application::UiEvent launch{L"terminal.launch.default", L"windows-terminal", {}};
+  DHEPZ_CHECK(state.Apply(actions.Dispatch(launch, state)));
+  host.Complete();
+  DHEPZ_CHECK_EQ(host.persisted_.size(), static_cast<std::size_t>(1));
+  ui::application::UiState persisted;
+  DHEPZ_CHECK(persisted.Apply(host.persisted_.front()));
+  DHEPZ_CHECK_EQ(persisted.Text(L"terminal.path"), std::wstring(L"E:\\next"));
+  const std::vector<std::wstring>* history = persisted.Strings(L"terminal.recent_paths");
+  DHEPZ_CHECK(history != nullptr);
+  DHEPZ_CHECK_EQ(history->size(), static_cast<std::size_t>(3));
+  DHEPZ_CHECK_EQ(history->front(), std::wstring(L"E:\\next"));
 }

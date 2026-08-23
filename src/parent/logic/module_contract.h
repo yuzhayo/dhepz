@@ -28,6 +28,7 @@ class BackgroundCapabilities {
   virtual core::Status StartProcess(const ProcessRequest& request) const = 0;
   virtual core::Status RunProcess(const ProcessRequest& request,
                                   std::wstring* standard_output) const = 0;
+  virtual core::Status PersistState(const ui::application::UiPatch& patch) const = 0;
 };
 
 using BackgroundWork = std::function<core::Status(
@@ -38,6 +39,7 @@ class ModuleHost {
  public:
   virtual ~ModuleHost() = default;
   virtual std::wstring DefaultDirectory() const = 0;
+  virtual ui::application::UiPatch RestoredState(std::wstring_view prefix) const = 0;
   virtual std::optional<std::wstring> PickFolder(std::wstring_view initial_path) = 0;
   virtual void RunBackground(BackgroundWork work, BackgroundComplete complete) = 0;
   virtual void Publish(ui::application::UiPatch patch) = 0;

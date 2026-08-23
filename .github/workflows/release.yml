@@ -1,0 +1,127 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment after the first release
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  checks: read
+  contents: write
+
+concurrency:
+  group: dhepz-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 40
+
+    steps:
+      - name: Require main branch
+        if: github.ref != 'refs/heads/main'
+        shell: pwsh
+        run: throw 'Release harus dijalankan dari branch main.'
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: microsoft/setup-msbuild@v3
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 9.0.304
+
+      - name: Require green CI for this commit
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $response = gh api 'repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs' | ConvertFrom-Json
+          $green = @($response.check_runs | Where-Object {
+            $_.name -eq 'build' -and $_.conclusion -eq 'success'
+          })
+          if ($green.Count -eq 0) {
+            throw 'The build check has not passed for this exact commit.'
+          }
+
+      - name: Determine release version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ./tools/Get-ReleaseVersion.ps1 -Bump '${{ inputs.bump }}'
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Prepare release notes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $previousTag = git tag --sort=-v:refname | Select-Object -First 1
+          $lines = if ($previousTag) {
+            @(git log "$previousTag..HEAD" --pretty=format:'- %s')
+          } else {
+            @('- Initial installer and GitHub updater release.')
+          }
+          @(
+            "# dhepz ${{ steps.version.outputs.version }}"
+            ''
+            $lines
+          ) | Set-Content -LiteralPath artifacts/release-notes.md -Encoding utf8
+
+      - name: Download previous Velopack release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $releases = @(gh release list --limit 1 --json tagName | ConvertFrom-Json)
+          if ($releases.Count -gt 0) {
+            dotnet tool restore
+            dotnet vpk download github `
+              --repoUrl 'https://github.com/${{ github.repository }}' `
+              --outputDir Releases `
+              --token $env:GITHUB_TOKEN
+          } else {
+            Write-Host 'No previous release; full package only.'
+          }
+
+      - name: Package release
+        shell: pwsh
+        run: |
+          ./tools/Build-Release.ps1 `
+            -Version '${{ steps.version.outputs.version }}' `
+            -ReleaseNotes artifacts/release-notes.md
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          dotnet vpk upload github `
+            --repoUrl 'https://github.com/${{ github.repository }}' `
+            --outputDir Releases `
+            --token $env:GITHUB_TOKEN `
+            --publish `
+            --releaseName 'dhepz ${{ steps.version.outputs.version }}' `
+            --tag 'v${{ steps.version.outputs.version }}' `
+            --targetCommitish '${{ github.sha }}'
+
+      - name: Release summary
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem Releases -Filter '*-Setup.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          $hash = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash
+          @(
+            "## dhepz ${{ steps.version.outputs.version }}"
+            ''
+            "Installer: $($setup.Name)"
+            "SHA-256: ``$hash``"
+          ) >> $env:GITHUB_STEP_SUMMARY

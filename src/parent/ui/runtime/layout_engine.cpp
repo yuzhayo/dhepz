@@ -26,6 +26,12 @@ Padding ReadPadding(const config::ComponentNode& node) {
   return padding;
 }
 
+bool IsVisible(const config::ComponentNode& node,
+               const application::UiState& state) {
+  return components::BoundBool(node, L"visible_binding", state,
+                               node.GetBool(L"visible", true));
+}
+
 render::Rect ContentBounds(const config::ComponentNode& node, const render::Rect& bounds) {
   render::Rect base = node.type() == L"dialog"
                           ? components::DialogPanelBounds(node, bounds)
@@ -76,7 +82,8 @@ LayoutNode LayoutEngine::BuildGrid(const config::ComponentNode& node, render::Re
                                                node.GetString(L"overflow") != L"visible"};
   std::vector<std::size_t> regular;
   for (std::size_t index = 0; index < node.children().size(); ++index) {
-    if (node.children()[index].type() != L"dialog") regular.push_back(index);
+    if (node.children()[index].type() != L"dialog" &&
+        IsVisible(node.children()[index], *state_)) regular.push_back(index);
   }
   const std::size_t count = regular.size();
   if (count == 0) {
@@ -116,7 +123,7 @@ LayoutNode LayoutEngine::BuildFlow(const config::ComponentNode& node, render::Re
   float y = content.y;
   float line_height = 0.0f;
   for (const config::ComponentNode& child : node.children()) {
-    if (child.type() == L"dialog") continue;
+    if (child.type() == L"dialog" || !IsVisible(child, *state_)) continue;
     render::Size desired = Measure(child, content.width);
     if (desired.width <= 0.0f) desired.width = content.width;
     if (desired.height <= 0.0f) desired.height = 34.0f;
@@ -156,7 +163,7 @@ LayoutNode LayoutEngine::BuildContainer(const config::ComponentNode& node, rende
   std::size_t flexible = 0;
   for (std::size_t index = 0; index < node.children().size(); ++index) {
     const config::ComponentNode& child = node.children()[index];
-    if (child.type() == L"dialog") continue;
+    if (child.type() == L"dialog" || !IsVisible(child, *state_)) continue;
     regular.push_back(index);
     render::Size size = Measure(child, content.width);
     const float main = row ? size.width : size.height;
@@ -219,7 +226,9 @@ LayoutNode LayoutEngine::BuildContainer(const config::ComponentNode& node, rende
 
 LayoutNode LayoutEngine::Build(const config::ComponentNode& node,
                                const render::Rect& available) {
-  if (!node.GetBool(L"visible", true)) return {&node, {}, {}, false};
+  if (!IsVisible(node, *state_)) {
+    return {&node, {}, {}, false};
+  }
   if (node.type() == L"dialog" &&
       !components::BoundBool(node, L"open_binding", *state_)) {
     return {&node, {}, {}, false};

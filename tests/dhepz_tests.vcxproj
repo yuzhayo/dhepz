@@ -49,6 +49,7 @@
     <IntDir>$(SolutionDir)build\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
     <GeneratedDir>$(SolutionDir)build\generated\</GeneratedDir>
     <TargetName>dhepz_tests</TargetName>
+    <VelopackRoot>$(SolutionDir)build\deps\velopack-1.2.0</VelopackRoot>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
@@ -70,7 +71,7 @@
            then ..\src so it can include "core/status.h" exactly as the app does.
            A test that includes a header by a different path than production
            code is a test of a different header. -->
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\src;$(GeneratedDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\src;$(GeneratedDir);$(VelopackRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:preprocessor /Zc:inline %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -81,7 +82,8 @@
       <DataExecutionPrevention>true</DataExecutionPrevention>
       <HighEntropyVA>true</HighEntropyVA>
       <ControlFlowGuard>Guard</ControlFlowGuard>
-      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;shlwapi.lib;advapi32.lib;ole32.lib;windowsapp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(VelopackRoot)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;shlwapi.lib;advapi32.lib;ole32.lib;windowsapp.lib;velopack_libc_win_x64_msvc.dll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -129,6 +131,11 @@
     <ClInclude Include="**\*.h" />
     <ResourceCompile Include="app_icon.rc" />
   </ItemGroup>
+
+  <Target Name="CopyVelopackRuntime" AfterTargets="Build">
+    <Copy SourceFiles="$(VelopackRoot)\lib\velopack_libc_win_x64_msvc.dll"
+          DestinationFiles="$(OutDir)velopack_libc.dll" />
+  </Target>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

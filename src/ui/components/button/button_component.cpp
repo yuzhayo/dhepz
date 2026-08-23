@@ -7,17 +7,19 @@
 namespace ui::components {
 namespace {
 render::Size Measure(const config::ComponentNode& node, render::RenderBackend& backend,
-                     const application::UiState&, float max_width) {
-  const render::Size label = backend.MeasureText(node.GetString(L"label"), {}, max_width);
+                     const application::UiState& state, float max_width) {
+  const std::wstring label =
+      BoundText(node, L"label_binding", state, node.GetString(L"label"));
+  const render::Size measured_label = backend.MeasureText(label, {}, max_width);
   const float width = static_cast<float>(node.GetInt(
-      L"width", static_cast<long long>(std::max(32.0f, label.width + 18.0f))));
+      L"width", static_cast<long long>(std::max(32.0f, measured_label.width + 18.0f))));
   const float height = static_cast<float>(node.GetInt(L"height", 32));
   return {std::min(max_width, width), height};
 }
 
 void Paint(const config::ComponentNode& node, const render::Rect& bounds,
            const ComponentVisualState& visual, const ComponentPalette& palette,
-           const application::UiState&, render::RenderBackend& backend) {
+           const application::UiState& state, render::RenderBackend& backend) {
   render::Color fill = visual.pressed ? palette.control_pressed
                                       : visual.hovered ? palette.control_hover : palette.control;
   if (node.GetString(L"variant") == L"danger" && (visual.hovered || visual.pressed)) {
@@ -33,7 +35,8 @@ void Paint(const config::ComponentNode& node, const render::Rect& bounds,
   render::TextStyle label_style;
   label_style.family = node.GetString(L"font_family", L"Segoe UI");
   label_style.size_px = static_cast<float>(node.GetInt(L"font_size", 14));
-  backend.DrawTextRun(node.GetString(L"label"), bounds, label_style, palette.text,
+  backend.DrawTextRun(BoundText(node, L"label_binding", state, node.GetString(L"label")),
+                      bounds, label_style, palette.text,
                       render::TextAlign::Center, render::VerticalAlign::Middle);
   PaintFocus(bounds, visual, palette, backend);
 }
