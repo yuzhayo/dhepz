@@ -189,11 +189,11 @@ do {
     $checkJson = (& gh pr checks ([string]$pr.number) --json name,state,bucket 2>$null |
             Out-String).Trim()
     $checkExitCode = $LASTEXITCODE
-    $checks = if ($checkExitCode -eq 0 -and $checkJson) {
-        @($checkJson | ConvertFrom-Json)
-    } else {
-        @()
-    }
+    $checks = @(
+        if ($checkExitCode -eq 0 -and $checkJson) {
+            $checkJson | ConvertFrom-Json
+        }
+    )
 
     if ($checks.Count -gt 0) { break }
     if ((Get-Date) -ge $checkRegistrationDeadline) {
