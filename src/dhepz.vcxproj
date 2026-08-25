@@ -26,16 +26,16 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <VCToolsVersion>14.44.35207</VCToolsVersion>
+    <PlatformToolset>v145</PlatformToolset>
+    <VCToolsVersion>14.51.36231</VCToolsVersion>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <VCToolsVersion>14.44.35207</VCToolsVersion>
+    <PlatformToolset>v145</PlatformToolset>
+    <VCToolsVersion>14.51.36231</VCToolsVersion>
     <!-- LTCG. Part of why an installed native EXE can hit the cold-start budget. -->
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>

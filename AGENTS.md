@@ -1,6 +1,6 @@
 # dhepz — agent operating rules
 
-Windows Win32 C++20 tray-resident launcher. MSBuild (`v143`, `/std:c++20 /W4 /WX`, static CRT, Unicode).
+Windows Win32 C++20 tray-resident launcher. MSBuild (`v145`, `/std:c++20 /W4 /WX`, static CRT, Unicode).
 The plan lives at `.docs/plan.md` (gitignored, single live copy). Read it before proposing architecture.
 
 ## Non-negotiable goals

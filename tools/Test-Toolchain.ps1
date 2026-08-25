@@ -23,9 +23,9 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $expected = [ordered]@{
-    visualStudioPrefix = '17.14.'
-    vcToolsVersion     = '14.44.35207'
-    compilerPrefix     = '19.44.352'
+    visualStudioPrefix = '18.9.'
+    vcToolsVersion     = '14.51.36231'
+    compilerPrefix     = '19.51.362'
     windowsSdkVersion  = '10.0.26100.0'
     dotnetSdkPrefix    = '9.0.3'
 }
@@ -34,7 +34,7 @@ $problems = [System.Collections.Generic.List[string]]::new()
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
-    throw "vswhere.exe not found at '$vswhere'. Install Visual Studio 2022 C++ Build Tools."
+    throw "vswhere.exe not found at '$vswhere'. Install Visual Studio 2026 with the Desktop development with C++ workload."
 }
 
 $installation = & $vswhere -latest -products * `
@@ -42,7 +42,7 @@ $installation = & $vswhere -latest -products * `
     -format json | ConvertFrom-Json | Select-Object -First 1
 
 if (-not $installation) {
-    throw 'No Visual Studio 2022 installation with the C++ x64 toolset was found. Install the "Desktop development with C++" workload, or the VC.Tools.x86.x64 component in Build Tools.'
+    throw 'No Visual Studio 2026 installation with the C++ x64 toolset was found. Install the "Desktop development with C++" workload, or the VC.Tools.x86.x64 component in Build Tools.'
 }
 
 $msbuildPath  = Join-Path $installation.installationPath 'MSBuild\Current\Bin\MSBuild.exe'
@@ -60,7 +60,7 @@ $actual = [ordered]@{
 }
 
 if (-not $actual.visualStudio.StartsWith($expected.visualStudioPrefix, [StringComparison]::Ordinal)) {
-    $problems.Add("Visual Studio $($expected.visualStudioPrefix)x expected, found $($actual.visualStudio). Update Visual Studio 2022, or adjust the pin in this script and re-record the performance baseline (issue #13).")
+    $problems.Add("Visual Studio $($expected.visualStudioPrefix)x expected, found $($actual.visualStudio). Update Visual Studio 2026, or adjust the pin in this script and re-record the performance baseline (issue #13).")
 }
 
 if ($actual.msbuild -eq '(not found)') {

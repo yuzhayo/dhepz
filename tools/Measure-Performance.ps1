@@ -51,6 +51,8 @@ $className = 'dhepz.InfrastructureWindow'
 $installDir = Join-Path $env:LOCALAPPDATA 'dhepz\baseline'
 $installedExe = Join-Path $installDir 'dhepz.exe'
 $buildTreeExe = Join-Path $repositoryRoot 'build\x64\Release\dhepz.exe'
+$buildTreeRuntime = Join-Path $repositoryRoot 'build\x64\Release\velopack_libc.dll'
+$installedRuntime = Join-Path $installDir 'velopack_libc.dll'
 
 if (-not $SkipChecks) {
     & (Join-Path $PSScriptRoot 'Test-Toolchain.ps1') -SkipDotnet
@@ -61,12 +63,14 @@ if (-not $SkipChecks) {
 
 # --- Deploy ---------------------------------------------------------------
 
-if (-not (Test-Path -LiteralPath $buildTreeExe -PathType Leaf)) {
-    throw "No Release build at '$buildTreeExe'. Run tools\Build.ps1 -Configuration Release first."
+if (-not (Test-Path -LiteralPath $buildTreeExe -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $buildTreeRuntime -PathType Leaf)) {
+    throw "Release output is incomplete. Expected '$buildTreeExe' and '$buildTreeRuntime'. Run tools\Build.ps1 -Configuration Release first."
 }
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 Copy-Item -LiteralPath $buildTreeExe -Destination $installedExe -Force
-Write-Host "Deployed $installedExe" -ForegroundColor Cyan
+Copy-Item -LiteralPath $buildTreeRuntime -Destination $installedRuntime -Force
+Write-Host "Deployed $installedExe and $installedRuntime" -ForegroundColor Cyan
 
 # --- Native helpers ---------------------------------------------------------
 
@@ -182,7 +186,7 @@ $ramGb = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemor
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $vsVersion = (& $vswhere -latest -products * -format value -property installationVersion 2>$null)
 $installation = & $vswhere -latest -products * -format json | ConvertFrom-Json | Select-Object -First 1
-$compiler = Join-Path $installation.installationPath 'VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe'
+$compiler = Join-Path $installation.installationPath 'VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\cl.exe'
 $clVersion = if (Test-Path -LiteralPath $compiler) { (Get-Item -LiteralPath $compiler).VersionInfo.FileVersion } else { '(not found)' }
 
 # --- Report -------------------------------------------------------------------
@@ -200,7 +204,7 @@ $report = [ordered]@{
     }
     toolchain         = [ordered]@{
         visualStudio = $vsVersion
-        vcTools      = '14.44.35207'
+        vcTools      = '14.51.36231'
         cl           = $clVersion
         windowsSdk   = '10.0.26100.0'
     }
@@ -238,5 +242,5 @@ Write-Host "  CPU = $($report.idle.cpuPercent)%   threads = $threadsAtStart"
 Write-Host "  private bytes = $privateAtStart -> $privateAtEnd (drift $($report.idle.privateDriftBytes) B)"
 Write-Host "  GDI objects = $($report.idle.gdiObjects)   USER objects = $($report.idle.userObjects)"
 Write-Host "Machine: $env:COMPUTERNAME / $cpuModel / $ramGb GB / Windows $($report.machine.windows)"
-Write-Host "Toolchain: VS $vsVersion, VC 14.44.35207, cl $clVersion, SDK 10.0.26100.0"
+Write-Host "Toolchain: VS $vsVersion, VC 14.51.36231, cl $clVersion, SDK 10.0.26100.0"
 Write-Host "Report: artifacts\baseline.json" -ForegroundColor Cyan
