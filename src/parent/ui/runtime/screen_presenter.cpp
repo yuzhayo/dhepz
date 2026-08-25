@@ -21,6 +21,7 @@ ScreenPresenter::ScreenPresenter(render::RenderBackend* backend, application::Ui
   tab_node_.SetProperty(L"selected_binding", json::Value::String(L"parent.tabs.selected"));
   tab_node_.SetProperty(L"locked_binding", json::Value::String(L"parent.tabs.locked"));
   tab_node_.SetProperty(L"multi_row_binding", json::Value::String(L"parent.tabs.multi_row"));
+  tab_node_.SetProperty(L"scroll_binding", json::Value::String(L"parent.tabs.scroll_offset"));
   tab_node_.SetProperty(L"select_action", json::Value::String(L"parent.tabs.select"));
   tab_node_.SetProperty(L"reorder_action", json::Value::String(L"parent.tabs.reorder"));
   tab_node_.SetProperty(L"lock_action", json::Value::String(L"parent.tabs.lock"));
