@@ -58,14 +58,14 @@ if (-not $SkipChecks) {
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
-    throw "vswhere.exe not found at '$vswhere'. Install Visual Studio 2022 C++ Build Tools."
+    throw "vswhere.exe not found at '$vswhere'. Install Visual Studio 2026 with the Desktop development with C++ workload."
 }
 
 $msbuild = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild `
     -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
 
 if (-not $msbuild) {
-    throw 'MSBuild for Visual Studio 2022 was not found. Install the Microsoft.Component.MSBuild component.'
+    throw 'MSBuild for Visual Studio 2026 was not found. Install the Microsoft.Component.MSBuild component.'
 }
 
 $target = if ($Rebuild) { 'Rebuild' } else { 'Build' }
@@ -75,8 +75,8 @@ $arguments = @(
     '/m', '/nologo', '/v:minimal', "/t:$target",
     "/p:Configuration=$Configuration",
     "/p:Platform=$Platform",
-    '/p:PlatformToolset=v143',
-    '/p:VCToolsVersion=14.44.35207',
+    '/p:PlatformToolset=v145',
+    '/p:VCToolsVersion=14.51.36231',
     '/p:WindowsTargetPlatformVersion=10.0.26100.0',
     '/p:PreferredToolArchitecture=x64'
 )

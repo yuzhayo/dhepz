@@ -24,7 +24,7 @@ jobs:
     # is only meaningful if the image it runs on does not move underneath it —
     # otherwise a runner image update silently changes the binary and a
     # performance regression cannot be attributed to a code change.
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     timeout-minutes: 30
 
     steps:
