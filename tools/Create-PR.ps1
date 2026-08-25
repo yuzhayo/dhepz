@@ -33,6 +33,36 @@ function Read-Trimmed {
     return $value.Trim()
 }
 
+function Remove-FailedPullRequest {
+    param(
+        [Parameter(Mandatory)][int] $Number,
+        [Parameter(Mandatory)][string] $Branch,
+        [Parameter(Mandatory)][string] $Reason
+    )
+
+    Write-Host ''
+    Write-Host "$Reason Closing PR #$Number dan menghapus branch..." -ForegroundColor Yellow
+    Invoke-Checked -Command 'gh' -Arguments @(
+        'pr', 'close', [string]$Number, '--delete-branch'
+    )
+
+    $branchAfterClose = (& git branch --show-current).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Gagal membaca branch setelah menutup PR.' }
+    if ($branchAfterClose -ne 'main') {
+        Invoke-Checked -Command 'git' -Arguments @('switch', 'main')
+    }
+    Invoke-Checked -Command 'git' -Arguments @('pull', '--ff-only', 'origin', 'main')
+
+    & git show-ref --verify --quiet "refs/heads/$Branch"
+    if ($LASTEXITCODE -eq 0) {
+        Invoke-Checked -Command 'git' -Arguments @('branch', '-D', $Branch)
+    } elseif ($LASTEXITCODE -ne 1) {
+        throw "Gagal memeriksa branch lokal '$Branch'."
+    }
+
+    throw "$Reason PR ditutup; branch remote dan lokal dihapus."
+}
+
 foreach ($command in @('git', 'gh')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "$command tidak ditemukan di PATH."
@@ -167,7 +197,8 @@ do {
 
     if ($checks.Count -gt 0) { break }
     if ((Get-Date) -ge $checkRegistrationDeadline) {
-        throw "Required checks tidak muncul untuk PR #$($pr.number) dalam 10 menit."
+        Remove-FailedPullRequest -Number $pr.number -Branch $currentBranch `
+            -Reason 'Required checks tidak muncul dalam 10 menit.'
     }
 
     Write-Host 'Checks belum terdaftar; mencoba lagi dalam 10 detik...'
@@ -176,7 +207,8 @@ do {
 
 & gh pr checks ([string]$pr.number) --watch --interval 10
 if ($LASTEXITCODE -ne 0) {
-    throw "CI PR #$($pr.number) tidak green. PR tetap terbuka dan branch tidak dihapus."
+    Remove-FailedPullRequest -Number $pr.number -Branch $currentBranch `
+        -Reason 'CI tidak green.'
 }
 
 Write-Host ''
