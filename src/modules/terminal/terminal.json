@@ -8,7 +8,8 @@
     {
       "type": "screen",
       "route_id": "terminal",
-      "show_in_tabs": false,
+      "tab_label": "Terminal",
+      "show_in_tabs": true,
       "children": [
         {
           "type": "container",

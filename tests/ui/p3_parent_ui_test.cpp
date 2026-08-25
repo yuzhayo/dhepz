@@ -122,6 +122,25 @@ DHEPZ_TEST(P3Ui, BindingActionAndPatchFormOneContract) {
   DHEPZ_CHECK_EQ(state.Text(L"viewState.status"), std::wstring(L"on"));
 }
 
+DHEPZ_TEST(P3Ui, ResolvedRoutesCarryTabMetadataInDocumentOrder) {
+  const json::Value core_catalog =
+      LoadJson(RepositoryRoot() / L"assets" / L"ui" / L"core.json");
+  std::vector<ui::config::Diagnostic> diagnostics;
+  std::unique_ptr<ui::config::ResolvedUiDocument> document;
+  DHEPZ_CHECK(ui::config::ResolveDocument(
+                  core_catalog,
+                  {{L"routes.json",
+                    LR"({"components":[{"type":"screen","route_id":"terminal","tab_label":"Terminal","show_in_tabs":true},{"type":"screen","route_id":"settings","show_in_tabs":false}]})"}},
+                  &diagnostics, &document)
+                  .ok());
+  DHEPZ_CHECK(document != nullptr);
+  DHEPZ_CHECK_EQ(document->routes().size(), 2ULL);
+  DHEPZ_CHECK_EQ(document->routes()[0].id, std::wstring(L"terminal"));
+  DHEPZ_CHECK_EQ(document->routes()[0].tab_label, std::wstring(L"Terminal"));
+  DHEPZ_CHECK(document->routes()[0].show_in_tabs);
+  DHEPZ_CHECK_FALSE(document->routes()[1].show_in_tabs);
+}
+
 DHEPZ_TEST(P3Ui, AppWindowRoutesContentInputThroughParentUi) {
   const json::Value core_catalog =
       LoadJson(RepositoryRoot() / L"assets" / L"ui" / L"core.json");

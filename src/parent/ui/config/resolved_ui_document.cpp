@@ -173,6 +173,8 @@ core::Status ResolveDocument(const json::Value& core, const std::vector<ScreenSo
         }
         Route route;
         route.id = route_id;
+        route.tab_label = item.StringField(L"tab_label", route_id);
+        route.show_in_tabs = item.BoolField(L"show_in_tabs", true);
         route.root = BuildNode(core, item);
         const std::wstring backdrop = item.StringField(L"backdrop");
         if (!backdrop.empty()) {

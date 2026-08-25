@@ -51,6 +51,8 @@ struct Route {
   enum class BackdropKind { None, Color, Image, Screen };
 
   std::wstring id;
+  std::wstring tab_label;
+  bool show_in_tabs = true;
   BackdropKind backdrop_kind = BackdropKind::None;
   std::wstring backdrop_value;
   ComponentNode root;
@@ -59,6 +61,7 @@ struct Route {
 class ResolvedUiDocument final {
  public:
   const Route* FindRoute(std::wstring_view route) const;
+  const std::vector<Route>& routes() const { return routes_; }
   const std::wstring& initial_route() const { return initial_route_; }
   bool Token(std::wstring_view theme, std::wstring_view name, Rgba* color) const;
 
