@@ -264,8 +264,17 @@
     },
     "tabs": {
       "properties": {
+        "routes_binding": { "kind": "binding", "required": true },
+        "labels_binding": { "kind": "binding", "required": true },
         "selected_binding": { "kind": "binding" },
-        "gap": { "kind": "int", "default": 4 },
+        "locked_binding": { "kind": "binding" },
+        "multi_row_binding": { "kind": "binding" },
+        "select_action": { "kind": "string" },
+        "reorder_action": { "kind": "string" },
+        "lock_action": { "kind": "string" },
+        "gap": { "kind": "int", "default": 3 },
+        "tab_width": { "kind": "int", "default": 112 },
+        "tab_height": { "kind": "int", "default": 32 },
         "tab_stop": { "kind": "bool", "default": false }
       }
     }

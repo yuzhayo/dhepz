@@ -54,7 +54,7 @@ class TrayProcess final {
   // Creates the infrastructure window and registers TaskbarCreated. Does
   // not touch the tray yet, so a headless environment can still create the
   // process; InstallTray is a separate, non-fatal step.
-  StartResult Start(void* instance) noexcept;
+  StartResult Start(void* instance, std::wstring_view requested_route = {}) noexcept;
 
   // Adds the tray icon and sets NOTIFYICON_VERSION_4. Returns false when the
   // shell refuses (a headless session): the process stays up without a tray.
@@ -62,7 +62,7 @@ class TrayProcess final {
 
   // A launch request asks the resident owner to create another window.
   // Window ownership and feature routing do not belong in TrayProcess.
-  void set_launch_handler(std::function<void()> handler);
+  void set_launch_handler(std::function<void(std::wstring)> handler);
 
   // Blocks in GetMessageW until Exit. No timers, no polling, no idle work.
   int Run() noexcept;
@@ -93,7 +93,7 @@ class TrayProcess final {
   unsigned int taskbar_created_message_ = 0;
   bool tray_icon_added_ = false;
   bool modern_callback_ = false;
-  std::function<void()> launch_handler_;
+  std::function<void(std::wstring)> launch_handler_;
 };
 
 }  // namespace tray

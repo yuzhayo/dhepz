@@ -77,6 +77,33 @@
                   ]
                 }
               ]
+            },
+            {
+              "type": "card",
+              "interactive": false,
+              "height": 58,
+              "direction": "row",
+              "align": "center",
+              "justify": "space-between",
+              "padding": { "top": 8, "right": 10, "bottom": 8, "left": 10 },
+              "children": [
+                {
+                  "type": "text",
+                  "text": "Tab layout",
+                  "variant": "body",
+                  "width": 210,
+                  "height": 28
+                },
+                {
+                  "type": "toggle",
+                  "id": "tabs-multi-row",
+                  "label": "Multi Row",
+                  "checked_binding": "settings.tabs.multi_row",
+                  "action": "settings.tabs.multi_row",
+                  "width": 130,
+                  "height": 28
+                }
+              ]
             }
           ]
         }

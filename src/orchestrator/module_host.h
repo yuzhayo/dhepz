@@ -43,6 +43,8 @@ class ModuleHostAdapter final : public modules::ModuleHost,
   std::optional<std::wstring> PickFolder(std::wstring_view initial_path) override;
   void RunBackground(modules::BackgroundWork work,
                      modules::BackgroundComplete complete) override;
+  void RunBackgroundLatest(std::wstring_view key, modules::BackgroundWork work,
+                           modules::BackgroundComplete complete);
   void Publish(ui::application::UiPatch patch) override;
   void CloseWindowIfUnpinned() override;
 
