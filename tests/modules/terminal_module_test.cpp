@@ -109,6 +109,8 @@ DHEPZ_TEST(P4Terminal, DescriptorJsonAndCoreContractResolveTogether) {
   const modules::ModuleDescriptor* descriptor = modules::ModuleRegistry::Find(L"terminal");
   DHEPZ_CHECK(descriptor != nullptr);
   DHEPZ_CHECK_EQ(descriptor->route_id, std::wstring_view(L"terminal"));
+  DHEPZ_CHECK_EQ(descriptor->settings_route_id,
+                 std::wstring_view(L"terminal.settings"));
 
   json::Value core_catalog;
   DHEPZ_CHECK(json::Parse(Read(RepositoryRoot() / L"assets" / L"ui" / L"core.json"),
@@ -125,6 +127,9 @@ DHEPZ_TEST(P4Terminal, DescriptorJsonAndCoreContractResolveTogether) {
                   .ok());
   DHEPZ_CHECK(document != nullptr);
   DHEPZ_CHECK(document->FindRoute(L"terminal") != nullptr);
+  const ui::config::Route* settings = document->FindRoute(L"terminal.settings");
+  DHEPZ_CHECK(settings != nullptr);
+  DHEPZ_CHECK_FALSE(settings->show_in_tabs);
   ui::config::Rgba accent;
   DHEPZ_CHECK(document->Token(L"dark", L"accent", &accent));
 }

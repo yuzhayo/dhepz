@@ -104,6 +104,12 @@
           ]
         }
       ]
+    },
+    {
+      "type": "screen",
+      "route_id": "terminal.settings",
+      "show_in_tabs": false,
+      "children": []
     }
   ]
 }

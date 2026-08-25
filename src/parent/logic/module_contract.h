@@ -60,6 +60,7 @@ struct ModuleDescriptor {
   std::wstring_view screen_name;
   int ui_resource_id = 0;
   std::unique_ptr<ModuleController> (*create)() = nullptr;
+  std::wstring_view settings_route_id;
 };
 
 }  // namespace modules
