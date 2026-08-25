@@ -350,7 +350,7 @@ std::unique_ptr<ModuleController> CreateTerminalController() {
 
 const ModuleDescriptor kTerminalDescriptor{
     L"terminal", L"terminal", L"modules/terminal/terminal.json", IDR_TERMINAL_SCREEN_JSON,
-    &CreateTerminalController};
+    &CreateTerminalController, L"terminal.settings"};
 const ModuleRegistrar kTerminalRegistration(&kTerminalDescriptor);
 
 }  // namespace

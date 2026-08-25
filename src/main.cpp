@@ -123,7 +123,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
     BootstrapFailed(17, message.c_str());
   }
   for (const modules::ModuleDescriptor* descriptor : module_descriptors) {
-    if (feature_document->FindRoute(descriptor->route_id) == nullptr) {
+    const bool main_route_missing =
+        feature_document->FindRoute(descriptor->route_id) == nullptr;
+    const bool settings_route_missing =
+        !descriptor->settings_route_id.empty() &&
+        feature_document->FindRoute(descriptor->settings_route_id) == nullptr;
+    if (main_route_missing || settings_route_missing) {
       tray_process.Shutdown();
       BootstrapFailed(18, L"A module route is missing from its UI document.");
     }
