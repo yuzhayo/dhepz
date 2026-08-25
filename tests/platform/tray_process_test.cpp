@@ -72,7 +72,7 @@ DHEPZ_TEST(TrayProcess, SecondLaunchRequestsAnotherWindowFromTheOwner) {
   tray::TrayProcess owner;
   DHEPZ_CHECK(owner.Start(GetModuleHandleW(nullptr)) == tray::StartResult::Ok);
   bool launch_requested = false;
-  owner.set_launch_handler([&launch_requested] { launch_requested = true; });
+  owner.set_launch_handler([&launch_requested](std::wstring) { launch_requested = true; });
 
   tray::TrayProcess second;
   DHEPZ_CHECK(second.Start(GetModuleHandleW(nullptr)) ==
@@ -80,4 +80,16 @@ DHEPZ_TEST(TrayProcess, SecondLaunchRequestsAnotherWindowFromTheOwner) {
   DHEPZ_CHECK(second.window() == nullptr);
   PumpFor(20);
   DHEPZ_CHECK(launch_requested);
+}
+
+DHEPZ_TEST(TrayProcess, SecondLaunchForwardsRequestedRouteToOwner) {
+  tray::TrayProcess owner;
+  DHEPZ_CHECK(owner.Start(GetModuleHandleW(nullptr)) == tray::StartResult::Ok);
+  std::wstring requested;
+  owner.set_launch_handler([&requested](std::wstring route) { requested = std::move(route); });
+
+  tray::TrayProcess second;
+  DHEPZ_CHECK(second.Start(GetModuleHandleW(nullptr), L"terminal") ==
+              tray::StartResult::ExistingOwnerNotified);
+  DHEPZ_CHECK_EQ(requested, std::wstring(L"terminal"));
 }

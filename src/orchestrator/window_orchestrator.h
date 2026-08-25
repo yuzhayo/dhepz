@@ -1,10 +1,17 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
+
+#include "parent/ui/contracts/ui_contract.h"
 
 namespace ui::config {
 class ResolvedUiDocument;
+}
+
+namespace ui::tabs {
+class RouteTabs;
 }
 
 namespace modules {
@@ -20,22 +27,35 @@ class WindowOrchestrator final {
  public:
   WindowOrchestrator(void* instance, const ui::config::ResolvedUiDocument* settings_document,
                      const ui::config::ResolvedUiDocument* feature_document,
-                     const modules::ModuleDescriptor* feature);
+                     const std::vector<const modules::ModuleDescriptor*>& features);
   ~WindowOrchestrator();
 
   WindowOrchestrator(const WindowOrchestrator&) = delete;
   WindowOrchestrator& operator=(const WindowOrchestrator&) = delete;
 
-  bool OpenWindow();
+  bool OpenWindow(std::wstring_view route = {});
   void CloseAll();
 
  private:
   struct WindowSession;
 
+  bool RegisterTabActions(WindowSession* session);
+  void BroadcastTabState(WindowSession* source);
+  void LoadTabs();
+  void PersistTabs();
+  void RefreshJumpList();
+
   void* instance_ = nullptr;
   const ui::config::ResolvedUiDocument* settings_document_ = nullptr;
   const ui::config::ResolvedUiDocument* feature_document_ = nullptr;
-  const modules::ModuleDescriptor* feature_ = nullptr;
+  std::vector<const modules::ModuleDescriptor*> features_;
+  std::unique_ptr<ui::tabs::RouteTabs> route_tabs_;
+  std::wstring route_tabs_load_error_;
+  bool route_tabs_warning_shown_ = false;
+  bool route_tabs_load_started_ = false;
+  bool route_tabs_loaded_ = false;
+  bool route_tabs_dirty_ = false;
+  WindowSession* route_tabs_loader_ = nullptr;
   std::unique_ptr<modules::ModuleStateStore> state_store_;
   std::vector<std::unique_ptr<WindowSession>> windows_;
 };

@@ -98,6 +98,22 @@ void ModuleHostAdapter::RunBackground(modules::BackgroundWork work,
       generation_);
 }
 
+void ModuleHostAdapter::RunBackgroundLatest(std::wstring_view key,
+                                            modules::BackgroundWork work,
+                                            modules::BackgroundComplete complete) {
+  if (worker_ == nullptr || !work) return;
+  worker_->SubmitCoalesced(
+      key,
+      [this, work = std::move(work)](const std::atomic<bool>& cancelled) {
+        return std::make_shared<core::Status>(work(*this, cancelled));
+      },
+      [complete = std::move(complete)](std::shared_ptr<void> cargo) {
+        const auto status = std::static_pointer_cast<core::Status>(std::move(cargo));
+        if (complete && status != nullptr) complete(*status);
+      },
+      generation_);
+}
+
 void ModuleHostAdapter::Publish(ui::application::UiPatch patch) {
   if (parent_ != nullptr) parent_->ApplyPatch(patch);
 }

@@ -109,14 +109,22 @@ bool RouteTabs::SetMultiRow(bool multi_row) {
   return true;
 }
 
-core::Status RouteTabs::Save() const {
+std::wstring RouteTabs::Serialize() const {
   json::Value root = json::Value::Object();
   json::Value order = json::Value::Array();
   for (const std::wstring& route : order_) order.Append(json::Value::String(route));
   root.Set(L"order", std::move(order));
   root.Set(L"locked", json::Value::Bool(locked_));
   root.Set(L"multi_row", json::Value::Bool(multi_row_));
-  return files::WriteTextAtomic(state_path_, json::Serialize(root));
+  return json::Serialize(root);
+}
+
+core::Status RouteTabs::SaveSerialized(std::wstring text) const {
+  return files::WriteTextAtomic(state_path_, text);
+}
+
+core::Status RouteTabs::Save() const {
+  return SaveSerialized(Serialize());
 }
 
 }  // namespace ui::tabs

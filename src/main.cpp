@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <shellapi.h>
 
 #include <cstdint>
 #include <memory>
@@ -30,6 +31,21 @@ namespace {
   ExitProcess(code);
 }
 
+std::wstring RequestedRoute() {
+  int count = 0;
+  wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count);
+  if (arguments == nullptr) return {};
+  std::wstring route;
+  for (int index = 1; index + 1 < count; ++index) {
+    if (std::wstring_view(arguments[index]) == L"--route") {
+      route = arguments[index + 1];
+      break;
+    }
+  }
+  LocalFree(arguments);
+  return route;
+}
+
 }  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance,
@@ -50,9 +66,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   // to creating and showing an empty chrome container.
   const std::int64_t process_entry_qpc = trace::CurrentQpc();
   trace::PerformanceTraceSession session(process_entry_qpc);
+  const std::wstring requested_route = RequestedRoute();
 
   tray::TrayProcess tray_process;
-  switch (tray_process.Start(instance)) {
+  switch (tray_process.Start(instance, requested_route)) {
     case tray::StartResult::Ok:
       break;
     case tray::StartResult::ExistingOwnerNotified:
@@ -121,15 +138,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   // its own.
   orchestrator::WindowOrchestrator windows(instance, settings_document.get(),
                                             feature_document.get(),
-                                            module_descriptors.front());
+                                            module_descriptors);
 
-  tray_process.set_launch_handler([&] {
-    if (!windows.OpenWindow()) {
+  tray_process.set_launch_handler([&](std::wstring route) {
+    if (!windows.OpenWindow(route)) {
       MessageBoxW(nullptr, L"The application window could not be created.", L"dhepz",
                   MB_OK | MB_ICONERROR);
     }
   });
-  if (!windows.OpenWindow()) {
+  if (!windows.OpenWindow(requested_route)) {
     tray_process.Shutdown();
     BootstrapFailed(19, L"The application window could not be created.");
   }

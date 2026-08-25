@@ -49,6 +49,10 @@ bool ParentUi::ApplyPatch(const application::UiPatch& patch) {
   return changed;
 }
 
+std::wstring ParentUi::active_route() const {
+  return presenter_ != nullptr ? presenter_->active_route() : std::wstring{};
+}
+
 void ParentUi::Detach() {
   if (window_ != nullptr) {
     window_->set_content_layout({});

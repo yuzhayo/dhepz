@@ -28,6 +28,7 @@ class ParentUi final {
   core::Status Attach(shell::AppWindow* window, const config::ResolvedUiDocument* document,
                       application::UiActionRegistry* actions);
   bool ApplyPatch(const application::UiPatch& patch);
+  std::wstring active_route() const;
   void Detach();
 
  private:

@@ -24,6 +24,8 @@ class RouteTabs final {
   bool Reorder(std::size_t from, std::size_t to);
   bool SetLocked(bool locked);
   bool SetMultiRow(bool multi_row);
+  std::wstring Serialize() const;
+  core::Status SaveSerialized(std::wstring text) const;
   core::Status Save() const;
 
   const std::vector<std::wstring>& order() const { return order_; }

@@ -61,6 +61,9 @@ using ContextMenuFn = ComponentResult (*)(const config::ComponentNode&,
                                           const application::UiState&, void* owner_window);
 using HasOverlayFn = bool (*)(const config::ComponentNode&,
                               const application::UiState&);
+using PointerLifecycleFn = ComponentResult (*)(const config::ComponentNode&,
+                                               const application::UiState&, render::Point,
+                                               const render::Rect&);
 
 struct ComponentDescriptor {
   std::wstring_view type;
@@ -78,6 +81,9 @@ struct ComponentDescriptor {
   DoubleClickFn double_click = nullptr;
   ContextMenuFn context_menu = nullptr;
   HasOverlayFn has_overlay = nullptr;
+  PointerLifecycleFn pointer_down = nullptr;
+  PointerLifecycleFn pointer_move = nullptr;
+  PointerLifecycleFn pointer_up = nullptr;
 };
 
 }  // namespace ui::components

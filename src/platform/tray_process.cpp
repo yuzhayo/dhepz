@@ -12,6 +12,7 @@ namespace {
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kExitCommand = 1;
+constexpr ULONG_PTR kRoutePayload = 0x44525031;  // DRP1
 
 std::wstring ProcessStem() {
   std::wstring path(32768, L'\0');
@@ -32,7 +33,7 @@ TrayProcess::TrayProcess() noexcept = default;
 
 TrayProcess::~TrayProcess() { Shutdown(); }
 
-StartResult TrayProcess::Start(void* instance) noexcept {
+StartResult TrayProcess::Start(void* instance, std::wstring_view requested_route) noexcept {
   instance_ = instance;
   const std::wstring key = ProcessStem();
   class_name_ = key + L".InfrastructureWindow";
@@ -45,7 +46,21 @@ StartResult TrayProcess::Start(void* instance) noexcept {
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
     for (int attempt = 0; attempt < 100; ++attempt) {
       const HWND owner = FindWindowW(class_name_.c_str(), nullptr);
-      if (owner != nullptr && PostMessageW(owner, launch_message_, 0, 0)) {
+      bool notified = false;
+      if (owner != nullptr && requested_route.empty()) {
+        notified = PostMessageW(owner, launch_message_, 0, 0) != FALSE;
+      } else if (owner != nullptr) {
+        const std::wstring route(requested_route);
+        COPYDATASTRUCT data{};
+        data.dwData = kRoutePayload;
+        data.cbData = static_cast<DWORD>((route.size() + 1) * sizeof(wchar_t));
+        data.lpData = const_cast<wchar_t*>(route.c_str());
+        DWORD_PTR ignored = 0;
+        notified = SendMessageTimeoutW(owner, WM_COPYDATA, 0,
+                                       reinterpret_cast<LPARAM>(&data),
+                                       SMTO_ABORTIFHUNG | SMTO_BLOCK, 250, &ignored) != 0;
+      }
+      if (notified) {
         CloseHandle(mutex);
         return StartResult::ExistingOwnerNotified;
       }
@@ -92,7 +107,7 @@ bool TrayProcess::InstallTray() noexcept {
   return tray_icon_added_;
 }
 
-void TrayProcess::set_launch_handler(std::function<void()> handler) {
+void TrayProcess::set_launch_handler(std::function<void(std::wstring)> handler) {
   launch_handler_ = std::move(handler);
 }
 
@@ -149,7 +164,20 @@ long long TrayProcess::HandleMessage(unsigned int message, unsigned long long wp
                                      long long lparam) {
   HWND hwnd = static_cast<HWND>(window_);
   if (launch_message_ != 0 && message == launch_message_) {
-    if (launch_handler_) launch_handler_();
+    if (launch_handler_) launch_handler_({});
+    return 0;
+  }
+  if (message == WM_COPYDATA) {
+    const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
+    if (data != nullptr && data->dwData == kRoutePayload && data->lpData != nullptr &&
+        data->cbData >= sizeof(wchar_t) && data->cbData <= 512 * sizeof(wchar_t) &&
+        data->cbData % sizeof(wchar_t) == 0) {
+      const auto* route = static_cast<const wchar_t*>(data->lpData);
+      const std::size_t count = data->cbData / sizeof(wchar_t);
+      if (route[count - 1] == L'\0' && launch_handler_) {
+        launch_handler_(std::wstring(route, count - 1));
+      }
+    }
     return 0;
   }
   if (taskbar_created_message_ != 0 && message == taskbar_created_message_) {
@@ -201,7 +229,7 @@ void TrayProcess::HandleTrayCallback(unsigned long long wparam, long long lparam
                                     ? event == NIN_SELECT || event == NIN_KEYSELECT
                                     : event == WM_LBUTTONUP;
   if (launch_requested && launch_handler_) {
-    launch_handler_();
+    launch_handler_({});
   }
 }
 

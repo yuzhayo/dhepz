@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "core/status.h"
 #include "parent/ui/config/resolved_ui_document.h"
 #include "parent/ui/contracts/ui_action_registry.h"
@@ -22,6 +24,8 @@ class SettingsWindow final {
 
   core::Status Open(void* instance, void* owner_window,
                     const config::ResolvedUiDocument* document);
+  void SetTabLayout(bool multi_row, std::function<void(bool)> changed);
+  void ApplyTabLayout(bool multi_row);
   void Close();
   bool alive() const { return window_.alive(); }
 
@@ -30,6 +34,8 @@ class SettingsWindow final {
   shell::AppWindow window_;
   containers::ParentUi parent_ui_;
   SettingsUpdateController updater_;
+  bool tabs_multi_row_ = true;
+  std::function<void(bool)> tab_layout_changed_;
 };
 
 }  // namespace ui::settings

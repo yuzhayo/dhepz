@@ -29,6 +29,7 @@ class ScreenPresenter final {
   bool HandleKey(int virtual_key);
   bool HandleText(wchar_t character);
   bool HandleWheel(float x, float y, int delta);
+  const std::wstring& active_route() const { return route_; }
 
  private:
   const layout::LayoutNode* Hit(const layout::LayoutNode& node, float x, float y) const;
@@ -41,6 +42,9 @@ class ScreenPresenter final {
   void ApplyDocumentPalette();
   bool Activate(const config::ComponentNode* node);
   bool Dispatch(components::ComponentResult result);
+  bool HasTabs() const;
+  bool DispatchTabPointer(components::PointerLifecycleFn handler, float x, float y);
+  render::Point ContentPoint(float x, float y) const;
 
   render::RenderBackend* backend_;
   application::UiState* state_;
@@ -57,6 +61,10 @@ class ScreenPresenter final {
   std::wstring route_;
   render::Size viewport_size_;
   components::ComponentPalette palette_;
+  config::ComponentNode tab_node_{L"tabs", L"parent-route-tabs"};
+  render::Rect tab_bounds_;
+  float content_offset_y_ = 0.0f;
+  bool tab_pressed_ = false;
 };
 
 }  // namespace ui::presenter

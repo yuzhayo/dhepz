@@ -6,8 +6,11 @@
 #include "core/json.h"
 #include "framework/test_case.h"
 #include "parent/ui/config/resolved_ui_document.h"
+#include "parent/ui/contracts/ui_state.h"
 #include "parent/ui/runtime/route_tabs.h"
 #include "platform/files.h"
+#include "render/gdi_backend.h"
+#include "ui/components/component_registry.h"
 
 namespace {
 
@@ -78,4 +81,50 @@ DHEPZ_TEST(RouteTabs, PersistsOrderLockAndRowMode) {
     DHEPZ_CHECK_FALSE(tabs.multi_row());
   }
   std::filesystem::remove(state, ignored);
+}
+
+DHEPZ_TEST(RouteTabs, ComponentWrapsAndEmitsParentActions) {
+  ui::config::ComponentNode node(L"tabs", L"route-tabs");
+  node.SetProperty(L"routes_binding", json::Value::String(L"parent.tabs.routes"));
+  node.SetProperty(L"labels_binding", json::Value::String(L"parent.tabs.labels"));
+  node.SetProperty(L"selected_binding", json::Value::String(L"parent.tabs.selected"));
+  node.SetProperty(L"locked_binding", json::Value::String(L"parent.tabs.locked"));
+  node.SetProperty(L"multi_row_binding", json::Value::String(L"parent.tabs.multi_row"));
+  node.SetProperty(L"select_action", json::Value::String(L"parent.tabs.select"));
+  node.SetProperty(L"lock_action", json::Value::String(L"parent.tabs.lock"));
+
+  const std::vector<std::wstring> routes{L"one", L"two", L"three"};
+  ui::application::UiState state;
+  state.Set(L"parent.tabs.routes", routes);
+  state.Set(L"parent.tabs.labels", routes);
+  state.Set(L"parent.tabs.selected", std::wstring(L"one"));
+  state.Set(L"parent.tabs.locked", false);
+  state.Set(L"parent.tabs.multi_row", true);
+
+  render::GdiBackend backend;
+  ui::components::ComponentRegistry registry;
+  const ui::components::ComponentDescriptor* tabs = registry.Find(L"tabs");
+  DHEPZ_CHECK(tabs != nullptr && tabs->measure != nullptr);
+  const render::Size wrapped = tabs->measure(node, backend, state, 260.0f);
+  state.Set(L"parent.tabs.multi_row", false);
+  const render::Size single = tabs->measure(node, backend, state, 260.0f);
+  DHEPZ_CHECK(wrapped.height > single.height);
+
+  const render::Rect bounds{0.0f, 0.0f, 260.0f, single.height};
+  DHEPZ_CHECK(tabs->pointer_down != nullptr && tabs->pointer_up != nullptr);
+  const ui::components::ComponentResult down =
+      tabs->pointer_down(node, state, {10.0f, 10.0f}, bounds);
+  DHEPZ_CHECK(state.Apply(down.patch));
+  const ui::components::ComponentResult selected =
+      tabs->pointer_up(node, state, {10.0f, 10.0f}, bounds);
+  DHEPZ_CHECK_EQ(selected.event.action, std::wstring(L"parent.tabs.select"));
+  DHEPZ_CHECK_EQ(std::get<std::wstring>(selected.event.payload), std::wstring(L"one"));
+
+  const ui::components::ComponentResult lock_down =
+      tabs->pointer_down(node, state, {240.0f, 10.0f}, bounds);
+  DHEPZ_CHECK(state.Apply(lock_down.patch));
+  const ui::components::ComponentResult locked =
+      tabs->pointer_up(node, state, {240.0f, 10.0f}, bounds);
+  DHEPZ_CHECK_EQ(locked.event.action, std::wstring(L"parent.tabs.lock"));
+  DHEPZ_CHECK(std::get<bool>(locked.event.payload));
 }
