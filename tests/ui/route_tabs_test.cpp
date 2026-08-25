@@ -90,6 +90,7 @@ DHEPZ_TEST(RouteTabs, ComponentWrapsAndEmitsParentActions) {
   node.SetProperty(L"selected_binding", json::Value::String(L"parent.tabs.selected"));
   node.SetProperty(L"locked_binding", json::Value::String(L"parent.tabs.locked"));
   node.SetProperty(L"multi_row_binding", json::Value::String(L"parent.tabs.multi_row"));
+  node.SetProperty(L"scroll_binding", json::Value::String(L"parent.tabs.scroll_offset"));
   node.SetProperty(L"select_action", json::Value::String(L"parent.tabs.select"));
   node.SetProperty(L"lock_action", json::Value::String(L"parent.tabs.lock"));
 
@@ -109,6 +110,15 @@ DHEPZ_TEST(RouteTabs, ComponentWrapsAndEmitsParentActions) {
   state.Set(L"parent.tabs.multi_row", false);
   const render::Size single = tabs->measure(node, backend, state, 260.0f);
   DHEPZ_CHECK(wrapped.height > single.height);
+
+  const render::Rect overflow_bounds{0.0f, 0.0f, 260.0f, single.height};
+  const ui::components::ComponentResult scroll =
+      tabs->pointer_down(node, state, {150.0f, single.height - 2.0f}, overflow_bounds);
+  DHEPZ_CHECK(state.Apply(scroll.patch));
+  DHEPZ_CHECK(state.Integer(L"parent.tabs.scroll_offset") > 0);
+  DHEPZ_CHECK(state.Apply(tabs->pointer_up(
+      node, state, {150.0f, single.height - 2.0f}, overflow_bounds).patch));
+  state.Set(L"parent.tabs.scroll_offset", 0LL);
 
   const render::Rect bounds{0.0f, 0.0f, 260.0f, single.height};
   DHEPZ_CHECK(tabs->pointer_down != nullptr && tabs->pointer_up != nullptr);

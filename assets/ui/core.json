@@ -269,6 +269,7 @@
         "selected_binding": { "kind": "binding" },
         "locked_binding": { "kind": "binding" },
         "multi_row_binding": { "kind": "binding" },
+        "scroll_binding": { "kind": "binding" },
         "select_action": { "kind": "string" },
         "reorder_action": { "kind": "string" },
         "lock_action": { "kind": "string" },
