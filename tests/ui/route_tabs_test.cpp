@@ -113,10 +113,10 @@ DHEPZ_TEST(RouteTabs, ComponentWrapsAndEmitsParentActions) {
   const render::Rect bounds{0.0f, 0.0f, 260.0f, single.height};
   DHEPZ_CHECK(tabs->pointer_down != nullptr && tabs->pointer_up != nullptr);
   const ui::components::ComponentResult down =
-      tabs->pointer_down(node, state, {10.0f, 10.0f}, bounds);
+      tabs->pointer_down(node, state, {24.0f, 10.0f}, bounds);
   DHEPZ_CHECK(state.Apply(down.patch));
   const ui::components::ComponentResult selected =
-      tabs->pointer_up(node, state, {10.0f, 10.0f}, bounds);
+      tabs->pointer_up(node, state, {24.0f, 10.0f}, bounds);
   DHEPZ_CHECK_EQ(selected.event.action, std::wstring(L"parent.tabs.select"));
   DHEPZ_CHECK_EQ(std::get<std::wstring>(selected.event.payload), std::wstring(L"one"));
 
