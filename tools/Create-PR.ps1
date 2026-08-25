@@ -154,6 +154,26 @@ if ($pr) {
 
 Write-Host ''
 Write-Host "Menunggu required checks untuk PR #$($pr.number)..." -ForegroundColor Cyan
+$checkRegistrationDeadline = (Get-Date).AddMinutes(10)
+do {
+    $checkJson = (& gh pr checks ([string]$pr.number) --json name,state,bucket 2>$null |
+            Out-String).Trim()
+    $checkExitCode = $LASTEXITCODE
+    $checks = if ($checkExitCode -eq 0 -and $checkJson) {
+        @($checkJson | ConvertFrom-Json)
+    } else {
+        @()
+    }
+
+    if ($checks.Count -gt 0) { break }
+    if ((Get-Date) -ge $checkRegistrationDeadline) {
+        throw "Required checks tidak muncul untuk PR #$($pr.number) dalam 10 menit."
+    }
+
+    Write-Host 'Checks belum terdaftar; mencoba lagi dalam 10 detik...'
+    Start-Sleep -Seconds 10
+} while ($true)
+
 & gh pr checks ([string]$pr.number) --watch --interval 10
 if ($LASTEXITCODE -ne 0) {
     throw "CI PR #$($pr.number) tidak green. PR tetap terbuka dan branch tidak dihapus."
