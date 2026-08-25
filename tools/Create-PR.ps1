@@ -130,21 +130,54 @@ Write-Host ''
 Write-Host "Pushing $currentBranch..." -ForegroundColor Cyan
 Invoke-Checked -Command 'git' -Arguments @('push', '-u', 'origin', 'HEAD')
 
-$prUrl = (& gh pr list --head $currentBranch --base main --state open --json url --jq '.[0].url').Trim()
-if ($LASTEXITCODE -ne 0) {
-    throw 'Gagal memeriksa PR yang sudah ada.'
-}
+$prRows = @((& gh pr list --head $currentBranch --base main --state open --json number,url) |
+        ConvertFrom-Json)
+if ($LASTEXITCODE -ne 0) { throw 'Gagal memeriksa PR yang sudah ada.' }
+$pr = $prRows | Select-Object -First 1
 
 Write-Host ''
-if ($prUrl) {
+if ($pr) {
     Write-Host 'PR sudah tersedia:' -ForegroundColor Green
-    Write-Host $prUrl
+    Write-Host $pr.url
 } else {
     Write-Host 'Creating pull request...' -ForegroundColor Cyan
     Invoke-Checked -Command 'gh' -Arguments @(
         'pr', 'create', '--base', 'main', '--head', $currentBranch, '--fill'
     )
+
+    $prRows = @((& gh pr list --head $currentBranch --base main --state open --json number,url) |
+            ConvertFrom-Json)
+    if ($LASTEXITCODE -ne 0) { throw 'PR dibuat, tetapi detailnya tidak dapat dibaca.' }
+    $pr = $prRows | Select-Object -First 1
+    if (-not $pr) { throw 'PR dibuat, tetapi tidak ditemukan sebagai PR terbuka.' }
 }
 
 Write-Host ''
-Write-Host 'Selesai. PR tidak di-merge otomatis.' -ForegroundColor Green
+Write-Host "Menunggu required checks untuk PR #$($pr.number)..." -ForegroundColor Cyan
+& gh pr checks ([string]$pr.number) --watch --interval 10
+if ($LASTEXITCODE -ne 0) {
+    throw "CI PR #$($pr.number) tidak green. PR tetap terbuka dan branch tidak dihapus."
+}
+
+Write-Host ''
+Write-Host "CI green. Merging PR #$($pr.number)..." -ForegroundColor Cyan
+Invoke-Checked -Command 'gh' -Arguments @(
+    'pr', 'merge', [string]$pr.number, '--merge', '--delete-branch'
+)
+
+$branchAfterMerge = (& git branch --show-current).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Gagal membaca branch setelah merge.' }
+if ($branchAfterMerge -ne 'main') {
+    Invoke-Checked -Command 'git' -Arguments @('switch', 'main')
+}
+Invoke-Checked -Command 'git' -Arguments @('pull', '--ff-only', 'origin', 'main')
+
+& git show-ref --verify --quiet "refs/heads/$currentBranch"
+if ($LASTEXITCODE -eq 0) {
+    Invoke-Checked -Command 'git' -Arguments @('branch', '-d', $currentBranch)
+} elseif ($LASTEXITCODE -ne 1) {
+    throw "Gagal memeriksa branch lokal '$currentBranch'."
+}
+
+Write-Host ''
+Write-Host 'Selesai: PR merged, main sinkron, branch remote dan lokal dihapus.' -ForegroundColor Green
