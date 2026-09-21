@@ -72,7 +72,7 @@ DHEPZ_TEST(TrayProcess, SecondLaunchRequestsAnotherWindowFromTheOwner) {
   tray::TrayProcess owner;
   DHEPZ_CHECK(owner.Start(GetModuleHandleW(nullptr)) == tray::StartResult::Ok);
   bool launch_requested = false;
-  owner.set_launch_handler([&launch_requested](std::wstring) { launch_requested = true; });
+  owner.set_launch_handler([&launch_requested](launch::Request) { launch_requested = true; });
 
   tray::TrayProcess second;
   DHEPZ_CHECK(second.Start(GetModuleHandleW(nullptr)) ==
@@ -86,10 +86,26 @@ DHEPZ_TEST(TrayProcess, SecondLaunchForwardsRequestedRouteToOwner) {
   tray::TrayProcess owner;
   DHEPZ_CHECK(owner.Start(GetModuleHandleW(nullptr)) == tray::StartResult::Ok);
   std::wstring requested;
-  owner.set_launch_handler([&requested](std::wstring route) { requested = std::move(route); });
+  owner.set_launch_handler(
+      [&requested](launch::Request request) { requested = std::move(request.route); });
 
   tray::TrayProcess second;
-  DHEPZ_CHECK(second.Start(GetModuleHandleW(nullptr), L"terminal") ==
+  DHEPZ_CHECK(second.Start(GetModuleHandleW(nullptr), {L"terminal", {}}) ==
               tray::StartResult::ExistingOwnerNotified);
   DHEPZ_CHECK_EQ(requested, std::wstring(L"terminal"));
+}
+
+DHEPZ_TEST(TrayProcess, SecondLaunchForwardsExplorerPathToOwner) {
+  tray::TrayProcess owner;
+  DHEPZ_CHECK(owner.Start(GetModuleHandleW(nullptr)) == tray::StartResult::Ok);
+  launch::Request requested;
+  owner.set_launch_handler(
+      [&requested](launch::Request request) { requested = std::move(request); });
+
+  tray::TrayProcess second;
+  DHEPZ_CHECK(second.Start(GetModuleHandleW(nullptr), {L"terminal", L"C:\\folder with spaces"}) ==
+              tray::StartResult::ExistingOwnerNotified);
+  DHEPZ_CHECK_EQ(requested.route, std::wstring(L"terminal"));
+  DHEPZ_CHECK_EQ(requested.working_directory,
+                 std::wstring(L"C:\\folder with spaces"));
 }

@@ -4,10 +4,10 @@
      Nothing else may hardcode a version number. -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <DhepzVersion>0.1.0</DhepzVersion>
+    <DhepzVersion>0.1.3</DhepzVersion>
     <DhepzVersionMajor>0</DhepzVersionMajor>
     <DhepzVersionMinor>1</DhepzVersionMinor>
-    <DhepzVersionPatch>0</DhepzVersionPatch>
+    <DhepzVersionPatch>3</DhepzVersionPatch>
     <DhepzVersionBuild>0</DhepzVersionBuild>
   </PropertyGroup>
 </Project>

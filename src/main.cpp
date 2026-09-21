@@ -10,6 +10,7 @@
 #include "parent/logic/module_registry.h"
 #include "platform/performance_trace.h"
 #include "platform/app_update_service.h"
+#include "platform/launch_request.h"
 #include "platform/tray_process.h"
 #include "parent/ui/config/embedded_settings_loader.h"
 
@@ -31,19 +32,12 @@ namespace {
   ExitProcess(code);
 }
 
-std::wstring RequestedRoute() {
+launch::Request RequestedLaunch() {
   int count = 0;
   wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &count);
-  if (arguments == nullptr) return {};
-  std::wstring route;
-  for (int index = 1; index + 1 < count; ++index) {
-    if (std::wstring_view(arguments[index]) == L"--route") {
-      route = arguments[index + 1];
-      break;
-    }
-  }
+  const launch::Request request = launch::Parse(count, arguments);
   LocalFree(arguments);
-  return route;
+  return request;
 }
 
 }  // namespace
@@ -66,10 +60,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   // to creating and showing an empty chrome container.
   const std::int64_t process_entry_qpc = trace::CurrentQpc();
   trace::PerformanceTraceSession session(process_entry_qpc);
-  const std::wstring requested_route = RequestedRoute();
+  const launch::Request requested_launch = RequestedLaunch();
 
   tray::TrayProcess tray_process;
-  switch (tray_process.Start(instance, requested_route)) {
+  switch (tray_process.Start(instance, requested_launch)) {
     case tray::StartResult::Ok:
       break;
     case tray::StartResult::ExistingOwnerNotified:
@@ -145,13 +139,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
                                             feature_document.get(),
                                             module_descriptors);
 
-  tray_process.set_launch_handler([&](std::wstring route) {
-    if (!windows.OpenWindow(route)) {
+  tray_process.set_launch_handler([&](launch::Request request) {
+    if (!windows.OpenWindow(request.route, request.working_directory)) {
       MessageBoxW(nullptr, L"The application window could not be created.", L"dhepz",
                   MB_OK | MB_ICONERROR);
     }
   });
-  if (!windows.OpenWindow(requested_route)) {
+  if (!windows.OpenWindow(requested_launch.route, requested_launch.working_directory)) {
     tray_process.Shutdown();
     BootstrapFailed(19, L"The application window could not be created.");
   }

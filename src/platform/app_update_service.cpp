@@ -13,6 +13,8 @@
 #pragma warning(pop)
 
 #include "app_version.h"
+#include "platform/explorer_context_menu.h"
+#include "platform/paths.h"
 #include "platform/strings.h"
 
 namespace update {
@@ -43,6 +45,14 @@ std::unique_ptr<Velopack::UpdateManager> CreateManager() {
   }
   return std::make_unique<Velopack::UpdateManager>(
       std::make_unique<Velopack::GithubSource>(kGithubRepositoryUrl, "", false));
+}
+
+void InstallExplorerContextMenu(void*, const char*) {
+  (void)explorer_context_menu::Install(paths::ExecutablePath());
+}
+
+void RemoveExplorerContextMenu(void*, const char*) {
+  (void)explorer_context_menu::Remove();
 }
 
 }  // namespace
@@ -140,6 +150,12 @@ bool AppUpdateService::ScheduleRestart(std::wstring* error) {
   }
 }
 
-void RunVelopackStartup() { Velopack::VelopackApp::Build().Run(); }
+void RunVelopackStartup() {
+  Velopack::VelopackApp::Build()
+      .OnAfterInstall(&InstallExplorerContextMenu)
+      .OnAfterUpdate(&InstallExplorerContextMenu)
+      .OnBeforeUninstall(&RemoveExplorerContextMenu)
+      .Run();
+}
 
 }  // namespace update

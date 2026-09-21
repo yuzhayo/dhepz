@@ -33,7 +33,7 @@ class WindowOrchestrator final {
   WindowOrchestrator(const WindowOrchestrator&) = delete;
   WindowOrchestrator& operator=(const WindowOrchestrator&) = delete;
 
-  bool OpenWindow(std::wstring_view route = {});
+  bool OpenWindow(std::wstring_view route = {}, std::wstring_view working_directory = {});
   void CloseAll();
 
  private:

@@ -258,9 +258,12 @@ class TerminalController final : public ModuleController {
     Add(&patch, L"terminal.busy", false);
     (void)state.Apply(patch);
     (void)state.Apply(host.RestoredState(L"terminal."));
-    const std::wstring restored_path = state.Text(L"terminal.path", default_directory);
-    Add(&patch, L"terminal.path", restored_path);
-    Add(&patch, L"terminal.recent_paths", RecentPaths(state, restored_path));
+    const std::optional<std::wstring> requested = host.RequestedDirectory();
+    const std::wstring selected_path = requested.has_value()
+                                           ? *requested
+                                           : state.Text(L"terminal.path", default_directory);
+    Add(&patch, L"terminal.path", selected_path);
+    Add(&patch, L"terminal.recent_paths", RecentPaths(state, selected_path));
     return patch;
   }
 
