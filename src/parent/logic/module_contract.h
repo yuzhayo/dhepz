@@ -39,6 +39,7 @@ class ModuleHost {
  public:
   virtual ~ModuleHost() = default;
   virtual std::wstring DefaultDirectory() const = 0;
+  virtual std::optional<std::wstring> RequestedDirectory() const = 0;
   virtual ui::application::UiPatch RestoredState(std::wstring_view prefix) const = 0;
   virtual std::optional<std::wstring> PickFolder(std::wstring_view initial_path) = 0;
   virtual void RunBackground(BackgroundWork work, BackgroundComplete complete) = 0;

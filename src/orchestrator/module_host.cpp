@@ -14,8 +14,12 @@ namespace orchestrator {
 
 ModuleHostAdapter::ModuleHostAdapter(shell::AppWindow* window,
                                      ui::containers::ParentUi* parent,
-                                     modules::ModuleStateStore* state_store)
-    : window_(window), parent_(parent), state_store_(state_store) {}
+                                     modules::ModuleStateStore* state_store,
+                                     std::wstring default_directory)
+    : window_(window),
+      parent_(parent),
+      state_store_(state_store),
+      requested_directory_(std::move(default_directory)) {}
 
 ModuleHostAdapter::~ModuleHostAdapter() { Shutdown(); }
 
@@ -74,6 +78,12 @@ void ModuleHostAdapter::Shutdown() {
 }
 
 std::wstring ModuleHostAdapter::DefaultDirectory() const { return paths::ExecutableDir(); }
+
+std::optional<std::wstring> ModuleHostAdapter::RequestedDirectory() const {
+  return requested_directory_.empty()
+             ? std::nullopt
+             : std::optional<std::wstring>(requested_directory_);
+}
 
 ui::application::UiPatch ModuleHostAdapter::RestoredState(std::wstring_view prefix) const {
   return state_store_ != nullptr ? state_store_->Restore(prefix)

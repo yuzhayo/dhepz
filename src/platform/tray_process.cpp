@@ -4,6 +4,9 @@
 #include <shellapi.h>
 #include <windowsx.h>
 
+#include <algorithm>
+#include <utility>
+
 #include "resource.h"
 
 namespace tray {
@@ -13,6 +16,7 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kExitCommand = 1;
 constexpr ULONG_PTR kRoutePayload = 0x44525031;  // DRP1
+constexpr ULONG_PTR kLaunchPayload = 0x44525032;  // DRP2
 
 std::wstring ProcessStem() {
   std::wstring path(32768, L'\0');
@@ -33,7 +37,7 @@ TrayProcess::TrayProcess() noexcept = default;
 
 TrayProcess::~TrayProcess() { Shutdown(); }
 
-StartResult TrayProcess::Start(void* instance, std::wstring_view requested_route) noexcept {
+StartResult TrayProcess::Start(void* instance, const launch::Request& request) noexcept {
   instance_ = instance;
   const std::wstring key = ProcessStem();
   class_name_ = key + L".InfrastructureWindow";
@@ -47,14 +51,17 @@ StartResult TrayProcess::Start(void* instance, std::wstring_view requested_route
     for (int attempt = 0; attempt < 100; ++attempt) {
       const HWND owner = FindWindowW(class_name_.c_str(), nullptr);
       bool notified = false;
-      if (owner != nullptr && requested_route.empty()) {
+      if (owner != nullptr && request.route.empty() && request.working_directory.empty()) {
         notified = PostMessageW(owner, launch_message_, 0, 0) != FALSE;
       } else if (owner != nullptr) {
-        const std::wstring route(requested_route);
+        std::wstring payload = request.route;
+        payload.push_back(L'\0');
+        payload.append(request.working_directory);
+        payload.push_back(L'\0');
         COPYDATASTRUCT data{};
-        data.dwData = kRoutePayload;
-        data.cbData = static_cast<DWORD>((route.size() + 1) * sizeof(wchar_t));
-        data.lpData = const_cast<wchar_t*>(route.c_str());
+        data.dwData = kLaunchPayload;
+        data.cbData = static_cast<DWORD>(payload.size() * sizeof(wchar_t));
+        data.lpData = payload.data();
         DWORD_PTR ignored = 0;
         notified = SendMessageTimeoutW(owner, WM_COPYDATA, 0,
                                        reinterpret_cast<LPARAM>(&data),
@@ -107,7 +114,7 @@ bool TrayProcess::InstallTray() noexcept {
   return tray_icon_added_;
 }
 
-void TrayProcess::set_launch_handler(std::function<void(std::wstring)> handler) {
+void TrayProcess::set_launch_handler(std::function<void(launch::Request)> handler) {
   launch_handler_ = std::move(handler);
 }
 
@@ -175,7 +182,20 @@ long long TrayProcess::HandleMessage(unsigned int message, unsigned long long wp
       const auto* route = static_cast<const wchar_t*>(data->lpData);
       const std::size_t count = data->cbData / sizeof(wchar_t);
       if (route[count - 1] == L'\0' && launch_handler_) {
-        launch_handler_(std::wstring(route, count - 1));
+        launch_handler_({std::wstring(route, count - 1), {}});
+      }
+    } else if (data != nullptr && data->dwData == kLaunchPayload && data->lpData != nullptr &&
+               data->cbData >= 2 * sizeof(wchar_t) &&
+               data->cbData <= 32770 * sizeof(wchar_t) &&
+               data->cbData % sizeof(wchar_t) == 0) {
+      const auto* payload = static_cast<const wchar_t*>(data->lpData);
+      const std::size_t count = data->cbData / sizeof(wchar_t);
+      const auto separator = std::find(payload, payload + count, L'\0');
+      if (separator != payload + count && payload[count - 1] == L'\0' && launch_handler_) {
+        launch::Request request;
+        request.route.assign(payload, separator);
+        request.working_directory.assign(separator + 1, payload + count - 1);
+        launch_handler_(std::move(request));
       }
     }
     return 0;

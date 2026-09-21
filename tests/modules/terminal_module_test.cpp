@@ -34,6 +34,10 @@ class FakeHost final : public modules::ModuleHost,
  public:
   std::wstring DefaultDirectory() const override { return L"C:\\work"; }
 
+  std::optional<std::wstring> RequestedDirectory() const override {
+    return requested_directory_;
+  }
+
   ui::application::UiPatch RestoredState(std::wstring_view) const override {
     return restored_;
   }
@@ -95,6 +99,7 @@ class FakeHost final : public modules::ModuleHost,
   ui::application::UiPatch restored_;
   mutable std::vector<ui::application::UiPatch> persisted_;
   core::Status start_status_;
+  std::optional<std::wstring> requested_directory_;
   int close_if_unpinned_requests_ = 0;
 
  private:
@@ -275,4 +280,25 @@ DHEPZ_TEST(P4Terminal, RestoresAndPersistsPathHistoryForTheInputDropdown) {
   DHEPZ_CHECK(history != nullptr);
   DHEPZ_CHECK_EQ(history->size(), static_cast<std::size_t>(3));
   DHEPZ_CHECK_EQ(history->front(), std::wstring(L"E:\\next"));
+}
+
+DHEPZ_TEST(P4Terminal, ExplorerRequestedPathOverridesSavedPath) {
+  const modules::ModuleDescriptor* descriptor = modules::ModuleRegistry::Find(L"terminal");
+  DHEPZ_CHECK(descriptor != nullptr);
+  std::unique_ptr<modules::ModuleController> controller = descriptor->create();
+  DHEPZ_CHECK(controller != nullptr);
+
+  FakeHost host;
+  host.requested_directory_ = L"C:\\opened from Explorer";
+  host.restored_.changes.push_back({L"terminal.path", std::wstring(L"C:\\saved")});
+  host.restored_.changes.push_back(
+      {L"terminal.recent_paths", std::vector<std::wstring>{L"C:\\saved"}});
+  ui::application::UiState state;
+  DHEPZ_CHECK(state.Apply(controller->InitialState(host)));
+  DHEPZ_CHECK_EQ(state.Text(L"terminal.path"),
+                 std::wstring(L"C:\\opened from Explorer"));
+  const std::vector<std::wstring>* history = state.Strings(L"terminal.recent_paths");
+  DHEPZ_CHECK(history != nullptr);
+  DHEPZ_CHECK_EQ(history->front(), std::wstring(L"C:\\opened from Explorer"));
+  DHEPZ_CHECK_EQ(history->back(), std::wstring(L"C:\\saved"));
 }

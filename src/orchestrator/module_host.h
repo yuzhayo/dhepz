@@ -27,7 +27,8 @@ class ModuleHostAdapter final : public modules::ModuleHost,
                                 public modules::BackgroundCapabilities {
  public:
   ModuleHostAdapter(shell::AppWindow* window, ui::containers::ParentUi* parent,
-                    modules::ModuleStateStore* state_store);
+                    modules::ModuleStateStore* state_store,
+                    std::wstring default_directory = {});
   ~ModuleHostAdapter() override;
 
   ModuleHostAdapter(const ModuleHostAdapter&) = delete;
@@ -39,6 +40,7 @@ class ModuleHostAdapter final : public modules::ModuleHost,
   void Shutdown();
 
   std::wstring DefaultDirectory() const override;
+  std::optional<std::wstring> RequestedDirectory() const override;
   ui::application::UiPatch RestoredState(std::wstring_view prefix) const override;
   std::optional<std::wstring> PickFolder(std::wstring_view initial_path) override;
   void RunBackground(modules::BackgroundWork work,
@@ -59,6 +61,7 @@ class ModuleHostAdapter final : public modules::ModuleHost,
   shell::AppWindow* window_ = nullptr;
   ui::containers::ParentUi* parent_ = nullptr;
   modules::ModuleStateStore* state_store_ = nullptr;
+  std::wstring requested_directory_;
   std::unique_ptr<worker::Worker> worker_;
   unsigned int completion_message_ = 0;
   std::uint64_t generation_ = 0;

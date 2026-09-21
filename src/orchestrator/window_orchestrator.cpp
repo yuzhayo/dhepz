@@ -80,7 +80,8 @@ WindowOrchestrator::WindowOrchestrator(
 
 WindowOrchestrator::~WindowOrchestrator() { CloseAll(); }
 
-bool WindowOrchestrator::OpenWindow(std::wstring_view route) {
+bool WindowOrchestrator::OpenWindow(std::wstring_view route,
+                                    std::wstring_view working_directory) {
   if (instance_ == nullptr || settings_document_ == nullptr || feature_document_ == nullptr ||
       features_.empty()) {
     return false;
@@ -92,7 +93,8 @@ bool WindowOrchestrator::OpenWindow(std::wstring_view route) {
   auto item = std::make_unique<WindowSession>();
   if (!item->window.Create(instance_, 400.0f, 360.0f)) return false;
   item->host = std::make_unique<ModuleHostAdapter>(&item->window, &item->parent_ui,
-                                                   state_store_.get());
+                                                   state_store_.get(),
+                                                   std::wstring(working_directory));
   if (!item->host->Start().ok()) return false;
   item->modules.reserve(features_.size());
   for (const modules::ModuleDescriptor* feature : features_) {
