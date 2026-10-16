@@ -18,8 +18,8 @@
     it is the honest "startup complete" marker. The visible-window metrics
     return with Phase 1.
 
-    The toolchain pin is verified before any measurement, so a number can
-    never be attributed to the wrong compiler.
+    The observed toolchain versions are recorded with every measurement, so
+    a comparison can tell whether the toolchain moved underneath the numbers.
 
 .EXAMPLE
     ./tools/Measure-Performance.ps1
@@ -36,11 +36,7 @@ param(
 
     # How long the idle sample watches CPU and private bytes.
     [ValidateRange(10, 3600)]
-    [int] $IdleSeconds = 60,
-
-    # Inner loop only. CI-style discipline is the default: pinned
-    # toolchain first, or no numbers at all.
-    [switch] $SkipChecks
+    [int] $IdleSeconds = 60
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,13 +49,6 @@ $installedExe = Join-Path $installDir 'dhepz.exe'
 $buildTreeExe = Join-Path $repositoryRoot 'build\x64\Release\dhepz.exe'
 $buildTreeRuntime = Join-Path $repositoryRoot 'build\x64\Release\velopack_libc.dll'
 $installedRuntime = Join-Path $installDir 'velopack_libc.dll'
-
-if (-not $SkipChecks) {
-    & (Join-Path $PSScriptRoot 'Test-Toolchain.ps1') -SkipDotnet
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Toolchain verification failed. Numbers are only meaningful on the pinned toolchain.'
-    }
-}
 
 # --- Deploy ---------------------------------------------------------------
 

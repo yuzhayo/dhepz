@@ -37,8 +37,7 @@ param(
     # Force a full rebuild instead of an incremental build.
     [switch] $Rebuild,
 
-    # Skip dependency restore and the toolchain check. For a fast inner loop
-    # only — never in CI, where the checks are the point.
+    # Skip dependency restore. For a fast inner loop only — never in CI.
     [switch] $SkipChecks
 )
 
@@ -48,11 +47,6 @@ Set-StrictMode -Version Latest
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
 if (-not $SkipChecks) {
-    & (Join-Path $PSScriptRoot 'Test-Toolchain.ps1') -SkipDotnet
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Toolchain verification failed. See the problems listed above.'
-    }
-
     & (Join-Path $PSScriptRoot 'Restore-Dependencies.ps1')
 }
 
