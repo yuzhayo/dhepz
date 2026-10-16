@@ -1,0 +1,5 @@
+#include <windows.h>
+
+#include "opencode_resources.h"
+
+IDR_OPENCODE_SCREEN_JSON RCDATA "opencode.json"

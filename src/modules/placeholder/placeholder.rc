@@ -1,5 +1,0 @@
-#include <windows.h>
-
-#include "placeholder_resources.h"
-
-IDR_PLACEHOLDER_SCREEN_JSON RCDATA "placeholder.json"

@@ -2,8 +2,8 @@
   "components": [
     {
       "type": "screen",
-      "route_id": "placeholder",
-      "tab_label": "Placeholder",
+      "route_id": "opencode",
+      "tab_label": "opencode",
       "show_in_tabs": true,
       "children": []
     }
