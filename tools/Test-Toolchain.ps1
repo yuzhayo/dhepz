@@ -23,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $expected = [ordered]@{
-    visualStudioPrefix = '18.9.'
+    visualStudioPrefix = '18.10.'
     vcToolsVersion     = '14.51.36231'
     compilerPrefix     = '19.51.362'
     windowsSdkVersion  = '10.0.26100.0'
