@@ -5,7 +5,45 @@
       "route_id": "opencode",
       "tab_label": "opencode",
       "show_in_tabs": true,
-      "children": []
+      "children": [
+        {
+          "type": "container",
+          "id": "opencode-frame",
+          "direction": "column",
+          "padding": { "left": 3, "top": 3, "right": 3, "bottom": 3 },
+          "gap": 0,
+          "children": [
+            {
+              "type": "container",
+              "id": "opencode-content",
+              "direction": "column",
+              "padding": { "left": 13, "top": 9, "right": 13, "bottom": 9 },
+              "gap": 9,
+              "children": [
+                {
+                  "type": "button",
+                  "id": "fetch-sessions",
+                  "label": "Fetch sessions",
+                  "action": "opencode.fetch_sessions",
+                  "variant": "default",
+                  "width": 368,
+                  "height": 40,
+                  "accessible_name": "Fetch opencode sessions into JSON"
+                },
+                {
+                  "type": "text",
+                  "id": "opencode-status",
+                  "text_binding": "opencode.status",
+                  "variant": "caption",
+                  "align": "center",
+                  "width": 368,
+                  "height": 54
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
