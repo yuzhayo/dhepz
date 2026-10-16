@@ -31,11 +31,20 @@ void Add(ui::application::UiPatch* patch, std::wstring path,
 
 // Status messages carry an automatic " [file:line]" suffix for traces; the
 // status line is for a human, so the suffix comes off before display.
+//
+// The line paints as one non-wrapping run inside 368 px (see
+// GdiBackend::DrawTextRun), so anything longer would lose both of its ends to
+// clipping. Truncation keeps the start — the readable part — visible.
 std::wstring UserMessage(const core::Status& status) {
   if (status.ok()) return {};
   std::wstring message = status.Message();
   const std::size_t context = message.find(L" [");
   if (context != std::wstring::npos) message.resize(context);
+  constexpr std::size_t kDisplayLimit = 59;
+  if (message.size() > kDisplayLimit) {
+    message.resize(kDisplayLimit - 3);
+    message.append(L"...");
+  }
   return message;
 }
 
@@ -99,7 +108,11 @@ core::Status WriteSessionsExport(const BackgroundCapabilities& capabilities,
       paths::Join(paths::Join(paths::StateDir(), L"opencode"), kSessionsFileName);
   DHEPZ_RETURN_IF_ERROR(files::WriteTextAtomic(path, document));
   if (summary != nullptr) {
-    *summary = std::to_wstring(total) + L" sessions saved to " + path;
+    // Short on purpose: the status line shows one 368 px run, so the full
+    // absolute path would be unreadable. "app data\state" is where LO finds
+    // the file. The absolute path is one `path` variable away for debugging.
+    *summary = L"Saved " + std::to_wstring(total) +
+               L" sessions to app data\\state\\opencode\\" + kSessionsFileName;
   }
   return core::Ok();
 }
