@@ -1,0 +1,11 @@
+{
+  "components": [
+    {
+      "type": "screen",
+      "route_id": "placeholder",
+      "tab_label": "Placeholder",
+      "show_in_tabs": true,
+      "children": []
+    }
+  ]
+}
