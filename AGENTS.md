@@ -50,8 +50,8 @@ Tasks live in **GitHub Issues**, not in a markdown checklist. One milestone per 
 - `CHECKPOINT` issues are phase gates. **No phase starts until the previous gate is fully ticked.**
 - `.github/planning/` holds the scripts that generated those issues, and the issue-body template to reuse when a later phase is broken down. See its README.
 
-**One issue at a time, one PR each, in #30's order. Never work two in parallel.** Issue numbers are creation order and carry no meaning — #30's list is the order, and in one place it deliberately runs backwards through the numbers. Parallel work on items that merely look independent produces interleaved history nobody can bisect, and settles a shared interface against three simultaneous guesses instead of one refinement.
+**One issue at a time, one change each, in #30's order. Never work two in parallel.** Issue numbers are creation order and carry no meaning — #30's list is the order, and in one place it deliberately runs backwards through the numbers. Parallel work on items that merely look independent produces interleaved history nobody can bisect, and settles a shared interface against three simultaneous guesses instead of one refinement.
 
-`main` is protected: CI must be green and direct pushes are rejected, so every change lands as a PR.
+`main` is unprotected, as in citadel: direct pushes are allowed. CI still runs on every push, and `Create-PR.bat` stays available when a change should land through a pull request.
 
 When implementing, work from the issue: its acceptance criteria and verification steps are the definition of done for that task. If reality contradicts an acceptance criterion, say so and amend the issue rather than quietly doing something else.
